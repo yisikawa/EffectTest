@@ -1,0 +1,33 @@
+# ---- ビルド生成物 ----
+x64/
+Debug/
+Release/
+*.obj
+*.exe
+*.dll
+*.lib
+*.pdb
+*.ilk
+*.ipdb
+*.iobj
+*.exp
+*.tlog
+*.log
+
+# ---- Visual Studio ----
+.vs/
+*.user
+*.aps
+*.VC.db
+
+# ---- 実行時生成物（EffectTest）----
+effecttest_log.txt
+effecttest_selftest.txt
+effecttest_shot_diag.txt
+/shot_*.png
+/effecttest_*.png
+effecttest_trace.csv
+
+# ---- 一時 ----
+*.tmp
+Thumbs.db
