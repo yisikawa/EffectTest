@@ -4,8 +4,10 @@
 `D:\tools\AltanaView-master\.clinerules\00-workflow-memory.md` と同一。
 
 ## git
-- **git 前提**。実装開始前に `git init` し、初回コミットに現状を記録する。
-- 変更はブランチ＋小さなコミット（日本語メッセージ）。
+- **git 前提**。`main` の初期コミットは `0e05f8a`（2026-11-08 / 161 ファイル）。`core.autocrlf=false`。
+- 設計段階の変更（`EffectBase` ほか 9 箇所）は**この初期コミットに含まれる**（遡って分離できない）。
+- 現在の作業ブランチ: `design/list-to-screen`
+- 実装は `design/list-to-screen` から分岐した `feature/*` で行い、小さなコミット（日本語メッセージ）で積む。
 
 ## 進め方（順序厳守）
 1. 設計書（コード変更禁止）
