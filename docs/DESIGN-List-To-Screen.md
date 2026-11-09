@@ -4,7 +4,7 @@
 > この文書は「設計」であり、タスク分解の最終形は実装計画（別紙）で詰める。
 >
 > **改訂 v1.1（2026-11-09）**: 表示トリガーを**項目の単一選択**へ、3 段目を **Schedule の LISTBOX** へ変更。
-> UI と選択フローの正本は `docs/superpowers/specs/2026-11-09-model-select-schedule-design.md`。
+> UI と選択フローの詳細（決定事項 D1〜D6・レイアウト・状態・失敗時の扱い）は **§4.7 を正本**とする。
 
 ## 0. 前提と用語
 
@@ -114,12 +114,12 @@ bool CNPC::LoadNPCMotion() {
 ┌────────────────────────── ModelTest.exe ──────────────────────────┐
 │ WinMain.cpp（既存 UI）                                             │
 │   ├─ 既存: 種族/装備/モーション/Playback                           │
-│   └─ 追加: ListPanel（グループCB／項目LB／Schedule LB）  ★新規   │
+│   └─ 追加: ListPanel（グループ／項目／Schedule の 3 段）  ★新規   │
 │                                                                    │
 │  選択ハンドラ（★新規: ListBridge.cpp）                             │
 │   ├─ NPC 項目 → CModel::SetBody/LoadNPC/InitialTransform/          │
 │   │              ConvertMesh          （既存 API を呼ぶだけ）       │
-│   ├─ Schedule → ActionProgram（★新規: 実装名は v1 のまま）→ 0x2B 名解決 →   │
+│   ├─ Schedule → ActionProgram（★新規）→ 0x2B 名解決 →             │
 │   │              SetMotionName/LoadNPCMotion（既存 API）           │
 │   └─ Effect 項目 → EffectView（★新規: EffectTest から移植）        │
 │                                                                    │
@@ -140,7 +140,7 @@ bool CNPC::LoadNPCMotion() {
               → DAT の 0x07 名（39 個）を Schedule リストへ
 Schedule 選択  → ActionProgram::Parse(dat, "atk0")   … 命令列 6 件
               → 参照名の**先頭 3 文字**で同一 DAT の 0x2B を前方一致解決
-                 （"vatk" は 0x07 の入れ子 Action、"hwat" は一致無し＝無視）
+                 （"vatk" は 0x07 の入れ子 Schedule、"hwat" は一致無し＝無視）
               → CModel::SetMotionName(name); LoadNPCMotion(); SetTime(0)
 ```
 **起動時（必須・毎回）**
@@ -149,7 +149,7 @@ WinMain 起動 → FFXI 検出 → List 読み込み（29 グループ）
              → EffectBase_Load("<FFXI>\ROM\0\0.DAT")        … syst = 共有ベース
                  ・0x05 320 個のジェネレータを名前索引（"hit1","eis1" …）
                  ・0x20  61 枚のテクスチャを SRV 化
-                 ・0x07 132 個のタイムライン名を索引（入れ子 Action 用）
+                 ・0x07 132 個のタイムライン名を索引（入れ子 Schedule 用）
               → 描画は行わない（空のシーン：背景のみ・座標軸も非表示）
 ```
 > 起動時は**表示ゼロ**。表示は **List の項目選択（ダブルクリック）** がトリガー。
@@ -184,7 +184,7 @@ WinMain 起動 → FFXI 検出 → List 読み込み（29 グループ）
 | 種別 | パス | 責務 | 規模感 |
 |---|---|---|---|
 | 新規 | `ListDb.h/.cpp` | List 読み込み・ID→パス解決・文字コード変換 | 約 250 行（EffectTest から移植・依存なし） |
-| 新規 | `ListPanel.h/.cpp` | 3 コンボの生成・イベント処理・選択結果の公開 | 約 250 行 |
+| 新規 | `ListPanel.h/.cpp` | グループ CB／項目 LB／Schedule LB の生成・イベント処理・選択結果の公開 | 約 250 行 |
 | 新規 | `ActionProgram.h/.cpp` | NPC `0x07` の命令列解析、参照名→`0x2B/0x3D` 解決 | 約 200 行 |
 | 新規 | `EffectView.h/.cpp` | EffectTest の `Effect.cpp`+`EffectVm.cpp` を移植（`Dx.h` の SRV に接続） | 約 700 行 |
 | 新規 | `EffectBillboard.h/.cpp` | 加算合成ビルボード描画（ModelTest の device/context を利用） | 約 200 行 |
@@ -288,6 +288,137 @@ ModelTest.exe --base
 ```
 → **起動時ロードのコストは 3 ms**。毎回読んでも体感影響なし（設計判断の裏付け）。
 
+### 4.7 Schedule リスト設計（v2 / 2026-11-09）
+
+> この節が **UI と選択フローの正本**。§1・§4.1〜4.3・§5 の該当箇所は本節に合わせて更新済み。
+
+#### 4.7.1 決定事項
+
+| # | 決定 | 根拠 |
+|---|---|---|
+| D1 | **モデルの単一選択（クリック / キー移動）で即時**に DAT を読み、Schedule 一覧を更新する。ダブルクリックは同義（後方互換） | AltanaView と同じ操作感。現行はダブルクリックするまで 3 段目が空だった |
+| D2 | 3 段目は COMBOBOX ではなく **LISTBOX**（常時見える一覧）＋件数ラベル | 一覧性。`Schedule (39)` のように件数を併記 |
+| D3 | 用語は **Schedule** に統一（= `0x07`。AltanaView の `[NPC] Schedule` と同義）。v1 の「Action」は別名 | `AltanaView.ini` の `Schedule=` / 実測 `ROM\131\6.DAT` の `0x07`=39 件 |
+| D4 | **120 ms デバウンス**＋確定 index ガード | 1,266 件リスト（R4）でのキー連打耐性 |
+| D5 | Schedule は**入れ替え**（蓄積しない＝常に選択中の 1 モデル分） | `0x07` はモデル DAT 内の資源。混在させると解決先が曖昧になる |
+| D6 | Schedule は**行の選択で即再生**（現行 combo の挙動を踏襲）。`R` リセット / `Space` 一時停止 | 既存操作との連続性（`App.cpp:469` / `:453`） |
+
+#### 4.7.2 コントロールと レイアウト
+
+> 以下は**現行 EffectTest（`App.cpp`）の実装**に対する指定。案 D（ModelTest 土台）側の §4.3 では
+> `IDC_LIST_*` の名称になるが、構造（グループ CB／項目 LB／Schedule LB）は同一。
+
+| コントロール | ID | 型 | 内容 | 有効条件 |
+|---|---|---|---|---|
+| グループ | `IDC_GROUP` = 1001 | `COMBOBOX`（`CBS_DROPDOWNLIST`） | 29 グループ | 常時 |
+| 項目 | `IDC_ITEMS` = 1002 | `LISTBOX`（`LBS_NOTIFY`） | `名前 (ID)`（最大 1,266 件） | 常時 |
+| Schedule ラベル | `IDC_SCHEDULE_LABEL` = 1004 | `STATIC` | `Schedule (39)` / 未確定は `Schedule (-)` | 常時 |
+| **Schedule** | `IDC_SCHEDULE` = 1003 | `LISTBOX`（`LBS_NOTIFY｜WS_VSCROLL｜LBS_NOINTEGRALHEIGHT`） | 選択モデルの `0x07` 名 | NPC 確定時のみ（Effect 確定・未選択は `EnableWindow(FALSE)`） |
+
+- `IDC_ACTION`（1003）の**値は据え置き**、名前のみ `IDC_SCHEDULE` に変更（差分を小さく保つ）。
+- 内部名: `g_hAction`→`g_hSchedule`、`g_ActionNames`→`g_ScheduleNames`、`PlaySelectedAction`→`PlaySelectedSchedule`、ログ接頭辞 `[action]`→`[schedule]`。
+
+```
+w = クライアント幅 - 16、bottom = クライアント高
+g_hGroup         : x=8, y=8,             w, h=200        … ドロップダウン展開高
+g_hItems         : x=8, y=32,            w, h=bottom-194 … 残余はすべて項目に与える
+g_hScheduleLabel : x=8, y=bottom-158,    w, h=18
+g_hSchedule      : x=8, y=bottom-136,    w, h=128         … 6〜7 行が見える高さ
+```
+
+- `bottom < 320` では Schedule を 96、項目の最小高を 64 として負値を出さない。
+
+#### 4.7.3 イベントとデータフロー
+
+```
+WM_COMMAND / IDC_ITEMS / LBN_SELCHANGE または LBN_DBLCLK
+    g_PendingItem = LB_GETCURSEL
+    KillTimer(hPanel, IDT_COMMIT) → SetTimer(hPanel, IDT_COMMIT, 120, nullptr)   … 静止後に 1 回だけ
+
+WM_TIMER / IDT_COMMIT
+    KillTimer → CommitSelection(g_PendingItem)
+
+CommitSelection(index):                        // 唯一の確定経路
+    index < 0 || g_CommitBusy            → return
+    同一グループ && index == 確定済み index → return      // キー移動・ダブルクリックの 2 回目を吸収
+    ResolvePath 失敗 → ClearSelection("resolve failed", id)
+    LoadDatFile 失敗 → ClearSelection("load failed", path)
+    Effect グループ:
+        Schedule を空・無効化、ラベル "Schedule (-)"、g_Effect.Reset()、g_Paused = false
+    NPC グループ:
+        g_ScheduleNames = g_Dat の 0x07 名（チャンク順）
+        Schedule へ LB_ADDSTRING → 先頭を LB_SETCURSEL（自動選択のみ／再生しない）
+        有効化、ラベル "Schedule (<件数>)"
+    UpdateTitle()（EffectTest はタイトル/ログが表示更新点。モデル描画は P1）
+
+WM_COMMAND / IDC_SCHEDULE / LBN_SELCHANGE または LBN_DBLCLK
+    PlaySelectedSchedule(LB_GETCURSEL)          // BuildFromChunk 失敗はログのみ
+```
+
+- **自動選択で再生しない理由**: `LB_SETCURSEL` は `LBN_SELCHANGE` を送出しないため、先頭の自動選択で勝手に再生が始まることはない。利用者が明示的に選んだ行だけ再生する（D6）。
+- **後始末 `ClearSelection(reason, detail)`**: `g_Effect.ReleaseTextures()`（`Effect.cpp:193`）→ `g_Effect.Reset()`（`:203`）→ `g_ActionCtx.Reset()` → Schedule 空・無効 → `g_Dat.Unload()`（`Dat.h:34`）→ `g_DatPath` 空 → 確定 index を -1 → `UpdateTitle()`（案内文へ）→ ログ `[schedule] clear: <reason> <detail>`。
+
+#### 4.7.4 状態モデル
+
+| 状態 | `g_DatPath` | Schedule リスト | 画面 |
+|---|---|---|---|
+| 未選択（起動直後） | 空 | 空・無効 | 背景のみ（座標軸は既定 OFF） |
+| Effect 確定 | `…\ROM\11\17.DAT` | 空・無効 | エフェクト再生 |
+| NPC 確定 | `…\ROM\131\6.DAT` | 39 件・有効／先頭選択 | エフェクト無し（モデル描画は P1） |
+| 失敗 | 空 | 空・無効 | 背景のみ＋タイトルは案内文 |
+
+#### 4.7.5 失敗・空の扱い
+
+| 事象 | 挙動 |
+|---|---|
+| `ResolvePath` 失敗（ROM 未インストール等） | `ClearSelection("resolve failed", id)`。**直前の表示を残さない**（§1 の起動時規約と整合） |
+| DAT 読み込み失敗（破損・0 バイト） | `ClearSelection("load failed", path)`。`DatFile::Load` は先頭で `Unload()` する（`Dat.cpp:8`）ため古い DAT は残らない |
+| `0x07` が 0 件 | 正常系。ラベル `Schedule (0)`、リスト有効・空、ログ `[schedule] count=0` |
+| Schedule がタイムラインを持たない | ログのみ。再生位置は変えない |
+| ベース `ROM\0\0.DAT` 失敗 | 従来どおり警告のみで起動継続（R7） |
+
+#### 4.7.6 性能・再入防止
+
+| 対策 | 内容 |
+|---|---|
+| デバウンス | `SetTimer` 120 ms（↑↓ 長押し・連続クリックで DAT 読みが発火しない） |
+| 確定 index ガード | 同一グループ・同一 index は no-op（ダブルクリックの 2 回目を吸収） |
+| 再入フラグ | `g_CommitBusy` で `CommitSelection` の多重実行を抑止 |
+| タイマ破棄 | グループ変更（`FillItems`）で `KillTimer` |
+
+**目標値**: 単一選択→Schedule 反映 **< 50 ms**（ROM1 最大 DAT、`load_ms` をログ出力）／1,266 件で ↑↓ 長押し 2 秒のフレーム落ち 5% 未満。
+
+#### 4.7.7 現行 EffectTest への影響（`App.cpp` のみ）
+
+| 箇所 | 現状 | 変更 |
+|---|---|---|
+| `enum`（`:80`） | `IDC_ACTION` | `IDC_SCHEDULE`（値 1003 維持）、`IDC_SCHEDULE_LABEL=1004`、`IDT_COMMIT=1` |
+| グローバル（`:64-75`） | `g_hAction` / `g_ActionNames` | `g_hSchedule` / `g_hScheduleLabel` / `g_ScheduleNames` / `g_PendingItem` / `g_CommittedItem` / `g_CommittedGroup` / `g_CommitBusy` |
+| `BuildPanelControls`（`:537`） | COMBOBOX 1 個 | LISTBOX＋STATIC に置換、初期は `EnableWindow(FALSE)` |
+| `LayoutPanel`（`:524`） | 3 要素 | 上記の式へ |
+| `FillItems`（`:575`） | `CB_RESETCONTENT` | `KillTimer`、Schedule 空・無効、確定 index リセット |
+| `LoadListSelection`（`:599`） | 確定処理 | `CommitSelection` に改称（§4.7.3 の分岐） |
+| `PlaySelectedAction`（`:648`） | `g_ActionNames` | `PlaySelectedSchedule` に改称（中身は同一） |
+| `PanelProc`（`:686-704`） | `LBN_DBLCLK` のみ | `LBN_SELCHANGE`（デバウンス）、`IDC_SCHEDULE` の `LBN_SELCHANGE`/`LBN_DBLCLK`、`WM_TIMER` |
+| 新規ヘルパ | — | `ScheduleClear()` / `ClearSelection()` / `UpdateScheduleLabel()`（計 30 行程度） |
+
+- 変更しない: `Dat.*` / `Effect.*` / `EffectVm.*` / `ListDb.*` / `Tim.*` / `Gfx.*` / `EffectBase.*`
+- 検証モードの引数と既存出力書式は不変（`--action` の出力はそのまま回帰確認に使う）。
+- 実装時は `ReadMe.md` の操作説明（「ダブルクリックで確定」→「単一選択で確定」、「Action」→「Schedule」）も更新する。
+
+#### 4.7.8 検証
+
+| 層 | 手法 | ゴールデン |
+|---|---|---|
+| 回帰（List） | `--list` | 29 グループ / NPC ROM1 = 1,266 件 |
+| Schedule 列挙 | 新規 `--schedule <dat>`（1 行 1 件） | `ROM\131\6.DAT` の `0x07` = **39 件** |
+| 回帰（Effect） | `--shot "…\ROM\11\17.DAT" out.png` | timeline=18 / spawn=8 / 3.3333 s / 非背景 > 6,000 |
+| UI 手動 | `NPC ROM1` → `ヒューム♀NPC (3-11)` を**シングルクリック** | ラベル `Schedule (n)`、リストに `0x07` 名が並ぶ |
+| UI 手動（失敗系） | 存在しない ROM / 壊れた DAT | 背景のみに戻り、ログに `clear:` |
+| 性能 | ↑↓ 長押し 2 秒・連続クリック | §4.7.6 の目標値 |
+
+
+
 ---
 
 ## 5. フェーズ計画（各フェーズが単独で動作確認できる単位）
@@ -373,6 +504,7 @@ ModelTest.exe --effect "ROM\11\17.DAT" --shot out_fire.png
 |---|---|---|
 | List 解析 | ヘッドレス `--list` | グループ数・件数・解決パスを**ゴールデン値**と比較 |
 | Schedule 解析 | ヘッドレス `--action` | 命令数・`op`/`name` 列をゴールデン値と比較 |
+| Schedule 列挙 | ヘッドレス `--schedule <dat>`（新規） | `0x07` 名の一覧がゴールデン（`ROM\131\6.DAT` = 39 件）と一致 |
 | Effect | ヘッドレス `--effect` | 18 命令 / 8 生成 / 3.3333 s（EffectTest と一致） |
 | 描画 | `--shot` で PNG → 画素検査 | 非背景サンプル数・最大 RGB 和 |
 | 回帰 | 既存の PC/NPC 表示、4 面図、保存系 | 例外・クラッシュなし、出力ファイル生成 |
@@ -387,10 +519,10 @@ ModelTest.exe --effect "ROM\11\17.DAT" --shot out_fire.png
 |---|---|---|---|
 | ~~R1~~ | ~~モデルのテクスチャが DAT 内 `0x20` で解決できない~~ | — | **解消（実測）**: `ROM\131\6.DAT` の `gob0`/`hf_a` は同一 DAT 内の **DXT3**。既存 `Tim.cpp`（BC2 対応）でデコード可能 |
 | ~~R2~~ | ~~`0x3D` の意味が未確定~~ | — | **解消（実測）**: `CModel::SetMotion3FromList` は **先頭 3 文字前方一致**で `0x2B` を解決。`0x3D` は参照先の変種（`atk1..4`）。一致しない参照（`hwat`）は**無視**する仕様 |
-| R3 | Action の未解読 op（`0x18`, `0x50`, `0x24`, `0x32`） | 一部の振り付けが再現されない | 命令長で読み飛ばし、ログに未対応 op を出す（数値は失わない） |
+| R3 | Schedule の未解読 op（`0x18`, `0x50`, `0x24`, `0x32`） | 一部の振り付けが再現されない | 命令長で読み飛ばし、ログに未対応 op を出す（数値は失わない） |
 | R4 | 1,266 件のリスト投入が重い | UI が固まる | `WM_SETREDRAW` 抑制 + 遅延ロード（既に実装済みの方式を踏襲） |
 | R5 | `EffectView` の SRV 所有権（ModelTest 側と二重解放） | クラッシュ | SRV は `EffectView` が所有し、`CMaterial` へは**借用**で渡す設計にする |
-| R6 | モデル DAT ごとに `0x07` の開始オフセットが異なる | Action 解析失敗 | EffectTest で実装済みの**自動判定**（`main`=+0x80 / NPC=+0x50）を移植 |
+| R6 | モデル DAT ごとに `0x07` の開始オフセットが異なる | Schedule 解析失敗 | EffectTest で実装済みの**自動判定**（`main`=+0x80 / NPC=+0x50）を移植 |
 | R7 | **ベース `ROM\0\0.DAT` のロード失敗**（未インストール ROM / 破損） | 共有参照が解決できず一部エフェクトが欠ける | 警告ログのみで**起動継続**。個別 DAT 単独でも動作する設計にする |
 | R8 | ROM 別 `0\0.DAT`（Effect7 の `0/0,Flowerpot` 等）の取り違え | 誤ったベースで解決 | カテゴリの ROM（`index.csv` 3 列目）に応じて `ROM<n>\0\0.DAT` を選ぶ。ROM1 を既定 |
 
@@ -401,7 +533,7 @@ ModelTest.exe --effect "ROM\11\17.DAT" --shot out_fire.png
 > **2026-11-09 更新（決定済み）**
 > - 表示トリガーは **項目の単一選択**（ダブルクリックは同義）。
 > - 3 段目は **Schedule の LISTBOX**（常時表示・件数ラベル付き）。蓄積はしない。
-> - 詳細設計: `docs/superpowers/specs/2026-11-09-model-select-schedule-design.md`（正本）
+> - 詳細設計: 本書 **§4.7**（UI と選択フローの正本）
 
 1. **土台アプリ**: 案 D（ModelTest を拡張）で進めてよいか？
    - 代替: 案 C（EffectTest にモデル描画を新規実装＝工数 2〜3 倍、リスク中）
