@@ -49,7 +49,7 @@ namespace
     float g_SizeScale = 1.0f;     // ビルボードの基準半径
 bool  g_UvScroll  = false;    // UV オフセット（sub+0xB4/0xB8）。0=off / 1=0..1 巡回 / 2=セル内巡回
 bool  g_BlendAuto = false;    // --blend auto: テクスチャの黒割合で alpha / add を自動選択
-int   g_SizeMode  = 0;        // 0: scale / 1: 0x21 quad / 2: 正方形（scale[2]）
+int   g_SizeMode  = 3;        // 0: scale / 1: 0x21 quad / 2: 正方形（scale[2]）/ 3: メートル（既定）
 
 // 骨格をエフェクトのルート変換として使う（--model / --motion / --bone）
 bool      g_RootActive = false;

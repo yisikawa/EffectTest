@@ -126,12 +126,12 @@ Expected: `timeline  = 9 insts`（`main`）。`sum0` 等は対象外でクラッ
 .\x64\Release\EffectTest.exe --shot "$ROM\11\17.DAT" out_fire.png
 Select-String -Path effecttest_log.txt -Pattern '\[shot\] dat='
 ```
-Expected: `ok=1`、`blend=alpha`、`uvmode=0x21`、`color=rgb`。`out_fire.png` が生成され、非背景 **8,050** / maxSum **348**（`--uv full` は 8,033。`--blend add` 3,841/668、`alpha_add` 3,132/372）
+Expected: `ok=1`、`blend=alpha`、`uvmode=0x21`、`color=rgb`。`out_fire.png` が生成され、非背景 **4,481** / maxSum **348**（`--uv full` は 8,033。`--blend add` 3,841/668、`alpha_add` 3,132/372）
 
 ```powershell
 .\x64\Release\EffectTest.exe --shot "$ROM\11\18.DAT" out_fire2.png
 ```
-Expected: `ok=1`・非背景 **2,694** / maxSum 576（`--uv full` は 2,396）
+Expected: `ok=1`・非背景 **4,048** / maxSum 576（`--uv full` は 2,396）
 
 ### V-09 GUI（T-10a〜e / T-11）
 
@@ -193,9 +193,9 @@ Expected（`[shot] … blend=<mode>` が指定どおり）:
 |---|---|---|---|
 | `add` | `add` | 約 3,841 | **668** |
 | `alpha_add` | `alpha_add` | 約 3,132 | 372 |
-| `alpha`（既定） | `alpha` | 約 8,050 | **348** |
+| `alpha`（既定） | `alpha` | 約 4,481 | **348** |
 
-`--blend` を省略したとき `blend=alpha` になること（`11\18` = 2,694、`11\22` = 7,317、`12\43` = 10,729）。UV は既定 `0x21`、色順は既定 `rgb`。
+`--blend` を省略したとき `blend=alpha` になること（`11\18` = 4,048、`11\22` = 6,521、`12\43` = 3,504）。UV は既定 `0x21`、色順は既定 `rgb`。
 
 ### V-14 テクスチャフレーム（T-15 / T-16）
 
@@ -272,7 +272,7 @@ ffmpeg -y -v error -i fire2.mp4 -vf "fps=10,crop=560:700:640:120,signalstats,met
 
 | 手法 | 6.2 s の非背景 | 参照との比較 |
 |---|---|---|
-| `--size scale`（既定） | 10,729（`--bg 40F0F0` で 3,291） | 横長の帯で不一致 |
+| `--size scale`（既定） | 3,504（`--bg 40F0F0` で 3,291） | 横長の帯で不一致 |
 | `--size square`（`scale[2]` を両軸） | 2,136 | 小さすぎる（参照の炎は体を覆う） |
 | `--size square --scale 3` | 13,129 | 大きさは近いが、**赤い円盤が主役**になり参照と不一致 |
 
@@ -320,11 +320,11 @@ ffmpeg -y -v error -i fire2.mp4 -vf "fps=10,crop=560:700:640:120,signalstats,met
 | V-05 | ✅ | `22 gen=8/8 tex=3/5 base=2 unused=2` / `23 11/11 3/7 1 4` / `23 14/14 2/6 0 4` |
 | V-06 | ✅ | NPC `131/6` = 39 件、`12/43` = `main,hit1` |
 | V-07 | ✅ | `prog=0x50`、`timeline = 13 insts, duration=8.3333s`、exit 0（timeline でない `0x07`（`sum0` 等）を含む DAT でもクラッシュしない） |
-| V-08 | ✅ | `ok=1`、`blend=alpha`、`uvmode=0x21`。非背景 **8,050**（Fire）/ **2,694**（Fire II）。最大 RGB 和 348 / 576（`--uv full` は 8,033 / 2,396） |
+| V-08 | ✅ | `ok=1`、`blend=alpha`、`uvmode=0x21`。非背景 **4,481**（Fire）/ **4,048**（Fire II）。最大 RGB 和 348 / 576（`--uv full` は 8,033 / 2,396） |
 | V-11（Phase 2） | ✅ | `--shot` で `[base] … tex=61 load_ms=4`、`g006 link=hit6 srv≠0` / `g005 link=hi17 srv≠0`（base の `0x20` を借用）。`gs00`(0x3D)・`g003`(0x1F) は `srv=0`（白）で正常 |
 | V-12（入れ子） | ✅ | `12\43`: `subtl = 1`（`main`→`hit1`）、`timeline = 9 insts`、`--shot` で `inst=8 ok=1`・非背景 **13,150**（修正前は main 単体で 0） |
-| V-13（合成） | ✅ | 既定 `blend=alpha`。Fire 非背景 8,050 / maxSum 348（`add`=3,841/668、`alpha_add`=3,132/372）。`12\43` は 10,729 / 244 |
-| V-14（0x21） | ✅ | `frm=` が `g004`/`g001`=16、`g000`/`g002`=1、他 0(none)。テクスチャは specific 名で解決（`fai0`→`fai01`=256×256、`fai1`→`fai02`、`fai2`→`fai03`）。Fire II は `--uv full` 2,396 → 既定 **2,694** |
+| V-13（合成） | ✅ | 既定 `blend=alpha`。Fire 非背景 4,481 / maxSum 348（`add`=3,841/668、`alpha_add`=3,132/372）。`12\43` は 3,504 / 257 |
+| V-14（0x21） | ✅ | `frm=` が `g004`/`g001`=16、`g000`/`g002`=1、他 0(none)。テクスチャは specific 名で解決（`fai0`→`fai01`=256×256、`fai1`→`fai02`、`fai2`→`fai03`）。Fire II は `--uv full` 2,396 → 既定 **4,048** |
 | V-15（参照動画） | ✅ | 開始 3.2 s・終了 7.3 s（尺 4.1 s ≈ 250 フレーム）。`fire2noalpha.mp4` から「RGB≒0＋alpha 形状・アルファ合成」を確定（§4.8.6.5） |
 | V-09 | 未実施 | GUI のクリック操作（手動） |
 | V-10 | ✅ | `groups=29` / `NPC ROM1 items=1266` |

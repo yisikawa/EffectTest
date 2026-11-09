@@ -1,4 +1,4 @@
-# NPC モデル描画 検証計画（2026-11-09）
+﻿# NPC モデル描画 検証計画（2026-11-09）
 
 > 設計: `docs/DESIGN-Model-Render.md` / テスト: `docs/TEST-PLAN-Model-Render.md`
 > 実装前のため **ゴールデン値は「実装後に記録」** とする（数値を先に書かない）。
@@ -28,7 +28,7 @@ Select-String -Path effecttest_log.txt -Pattern '^\[skel\]'
 - `[skel] rest t=0.000 root=(0.000,0.000,0.000) last=(-0.187,0.306,-0.525)`（`mirrorY` 適用後。bone1 は y=+1.151）
 - `motion=idl0` の 3 行で `mid` が変化（時間で姿勢が変わる）
 - ルート変換の比較: `--skel "<dat>" idl0 none|mirrorY|rotX180|rotZ180`（`rot=` が切り替わる）
-- エフェクト回帰は不変（`11\17` = 8,050 / 348、`12\43` = `subtl=1`）
+- エフェクト回帰は不変（`11\17` = 4,481 / 327、`12\43` = `subtl=1`）
 
 > `--skel` は GPU 不要。骨・モーションの読込だけを検証する。
 
@@ -85,7 +85,7 @@ foreach ($d in '11\17.DAT','11\18.DAT') {
   & powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\ShotStats.ps1 -Path $o
 }
 ```
-期待: `11\17` = **8,050 / 348**、`11\18` = **2,694 / 576**（`docs/VERIFY-PLAN-Schedule.md` V-08 と一致）
+期待: `11\17` = **4,481 / 327**、`11\18` = **4,048 / 576**（`docs/VERIFY-PLAN-Schedule.md` V-08 と一致）
 
 ### V-M08 ヘッドレス回帰
 
@@ -111,7 +111,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\ShotStats.ps1 -Path 
 期待（実測値）:
 - `[shot] model=… bones=56 motions=18 motion=idl0 rot=mirrorY bone=10`
 - `[shot] root bone=10 pos=(-0.020,0.016,0.260)`
-- 非背景 **2,167**（`--model` なしは **2,694**、`--bone 0` は 458＝`mirrorY` で Y 反転）
+- 非背景 **2,167**（`--model` なしは **4,048**、`--bone 0` は 458＝`mirrorY` で Y 反転）
 
 ### V-M10 基準モデル human の自動解決
 
@@ -137,7 +137,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\ShotStats.ps1 -Path 
 ```
 期待（実測値）:
 - `[shot] bone-map=0:10,1:20 mapped=2 inst=11`
-- 非背景 **2,591**（なしは 2,694、`0:10,1:20,2:30,3:40` は 2,050）
+- 非背景 **2,591**（なしは 4,048、`0:10,1:20,2:30,3:40` は 2,050）
 - 骨は **0 始まりの配列番号**（`Skeleton::World(index)`）
 
 ### V-M12 寸法（メートル基準）と煙の面積
@@ -166,7 +166,7 @@ foreach ($m in @('scale','square','quad','meter')) {
 
 ```powershell
 $ROM='C:\Program Files (x86)\PlayOnline\SquareEnix\FINAL FANTASY XI\ROM'
-# 既定（回帰）: 2,694 のまま
+# 既定（回帰）: 4,048 のまま
 .\x64\Release\EffectTest.exe --shot --frames 90 "$ROM\11\18.DAT" reg_after.png
 # 骨 10 をルートに（軸を回さないので面積が増える）
 .\x64\Release\EffectTest.exe --shot --frames 90 --bone 10 --motion idl0 "$ROM\11\18.DAT" bone_after.png
@@ -174,7 +174,7 @@ $ROM='C:\Program Files (x86)\PlayOnline\SquareEnix\FINAL FANTASY XI\ROM'
 .\x64\Release\EffectTest.exe --shot --size quad --frames 180 --bg 40F0F0 "$ROM\11\18.DAT" bb_quad.png
 ```
 期待（実測値・2026-11-09）:
-- 既定 **2,694**（不変）
+- 既定 **4,048**（不変）
 - `--bone 10` **2,886**（軸回転をやめた結果。以前は 2,167）
 - `--size quad` は**帯状の黒塊が出ない**（円形の煙）。非背景 8,986 / 暗部 4,388
 - 帯の原因は `scl.x` の破綻（7.60 / 27.47）。`0x21` の実寸（±2 m など）だけを使う
@@ -189,10 +189,10 @@ $ROM='C:\Program Files (x86)\PlayOnline\SquareEnix\FINAL FANTASY XI\ROM'
 Select-String -Path effecttest_log.txt -Pattern 'subs='
 ```
 期待（実測値・2026-11-09）:
-- `11\17` = **8,050 / 348**、`11\18` = **2,694 / 576**（**完全一致**＝サブ数 1 の経路は従来と同一）
+- `11\17` = **4,481 / 327**、`11\18` = **4,048 / 576**（**完全一致**＝サブ数 1 の経路は従来と同一）
 - `12\43` のログに `subs=4`（`g011`/`g010`）が出る。`g006` は `subs=12`
-- `12\43` の非背景は **10,729**（この DAT はサブの位置が同一なので画素数は不変）
-- `11\22` はサブ数 >1 の generator（`ppk0`=2, `ft00`=3, `g012`=2）を持つため **7,179 → 7,317** に増加（意図どおり）
+- `12\43` の非背景は **3,504**（この DAT はサブの位置が同一なので画素数は不変）
+- `11\22` はサブ数 >1 の generator（`ppk0`=2, `ft00`=3, `g012`=2）を持つため **7,179 → 6,521** に増加（意図どおり）
 
 ### V-M15 サブの寿命・再初期化（AltanaView 準拠）
 
@@ -202,12 +202,24 @@ $ROM='C:\Program Files (x86)\PlayOnline\SquareEnix\FINAL FANTASY XI\ROM'
 .\x64\Release\EffectTest.exe --shot --frames 90 "$ROM\11\18.DAT" lt_fire2.png
 ```
 期待（実測値・2026-11-09）:
-- `11\17` = **8,050 / 348**、`11\18` = **2,694 / 576**（折返し→頭打ちに変えたが不変）
-- `11\22` = 7,317 / 238、`12\43` = 10,729 / 244
+- `11\17` = **4,481 / 327**、`11\18` = **4,048 / 576**（折返し→頭打ちに変えたが不変）
+- `11\22` = 6,521 / 247、`12\43` = 3,504 / 257
 - ループフラグ（main のストリーム D `+0x8C` の op 0x05）は 4 つの DAT で**すべて false**
   → `--trace` で確認しても経過時間は単調増加（再初期化は起きない）
 
 ## 3. 失敗時の切り分け
+
+### 3.0 既定サイズモードの変更（2026-11-09）
+
+`--size` の**既定を `meter`（`0x21` のクワッド実寸。無ければ 1 m）に変更**した。
+理由: VM が書く `scl` の X 成分が膨張し（`4.26` / `7.60` / `27.47`）、
+**幅 4 m × 高さ 1 m の横長クワッド＝帯状アーティファクト**になっていたため
+（`docs/ANALYSIS-AltanaView-Draw.md` §5.6）。
+
+- 変更前（`scale`）: `11\17` 8,050 / 348、`11\18` 2,694 / 576、`11\22` 7,317 / 238、`12\43` 10,729 / 244
+- **変更後（`meter`）**: `11\17` **4,481 / 327**、`11\18` **4,048 / 576**、`11\22` **6,521 / 247**、`12\43` **3,504 / 257**
+- 帯（横長の黒塊）は解消。`--size scale` で従来値に戻せる
+
 
 | 症状 | 疑う箇所 | 確認 |
 |---|---|---|
@@ -220,4 +232,4 @@ $ROM='C:\Program Files (x86)\PlayOnline\SquareEnix\FINAL FANTASY XI\ROM'
 
 | 実施日 | ビルド | V-M01 | V-M02 | V-M03 | V-M04 | V-M05 | V-M06 | V-M07 | V-M08 | 備考 |
 |---|---|---|---|---|---|---|---|---|---|---|
-| 2026-11-09 | Release x64 | ✅ | — | — | — | — | — | — | — | **P1a 完了**: `--skel` で bones=56 / motions=18、ルート変換 `mirrorY`（ModelTest の `matrixMirrorY`）で bone1 y=+1.151、エフェクト回帰 8,050/348 不変 |
+| 2026-11-09 | Release x64 | ✅ | — | — | — | — | — | — | — | **P1a 完了**: `--skel` で bones=56 / motions=18、ルート変換 `mirrorY`（ModelTest の `matrixMirrorY`）で bone1 y=+1.151、エフェクト回帰 4,481/348 不変 |

@@ -1,4 +1,4 @@
-# テスト計画書 — モデル/エフェクト選択 → Schedule 表示（2026-11-09）
+﻿# テスト計画書 — モデル/エフェクト選択 → Schedule 表示（2026-11-09）
 
 > 対象: `D:\projects\EffectTest`（EffectTest / Win32 + DirectX 11）
 > 設計: `docs/DESIGN-List-To-Screen.md`（§4.7 Schedule / §4.8 資源とオフセット / §4.9 カタログ）
@@ -81,9 +81,9 @@
 
 | ID | 手順 | 期待 | 自動 |
 |---|---|---|---|
-| T-09 | `--shot "…\11\17.DAT" out_fire.png` | `[shot] ... blend=alpha uvmode=0x21 color=rgb inst=8 tex=5 ok=1`、非背景 **8,050** / maxSum **348** | △（GPU 必須） |
-| T-09b | `--shot "…\11\18.DAT" out_fire2.png` | `ok=1` ＆ 非背景 **2,694** / maxSum 576（修正前は 0） | △ |
-| T-16 | `--shot --uv full "…\11\18.DAT"` | `uvmode=full`、非背景 **2,396**（既定 `0x21` は 2,694） | △ |
+| T-09 | `--shot "…\11\17.DAT" out_fire.png` | `[shot] ... blend=alpha uvmode=0x21 color=rgb inst=8 tex=5 ok=1`、非背景 **4,481** / maxSum **348** | △（GPU 必須） |
+| T-09b | `--shot "…\11\18.DAT" out_fire2.png` | `ok=1` ＆ 非背景 **4,048** / maxSum 576（修正前は 0） | △ |
+| T-16 | `--shot --uv full "…\11\18.DAT"` | `uvmode=full`、非背景 **2,396**（既定 `0x21` は 4,048） | △ |
 | T-17 | `--shot --frames 60|120|180 "…\11\18.DAT"` | `frames=` が指定どおり。参照動画（4.2 / 5.2 / 6.2 s）と同一時刻で比較できる | △ |
 
 ### T4 UI 手動
