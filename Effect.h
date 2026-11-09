@@ -236,7 +236,7 @@ private:
     float    m_Speed    = 1.0f;
     uint8_t  m_LastColor[4] = { 255, 255, 255, 255 };
     bool     m_UseTexFrames = true;     // 0x21 の UV 適用（--uv full で無効化）
-    bool     m_RandomFrame  = true;     // 0x21 のフレームを乱数選択（AltanaView 準拠。--uvframe time で経時）
+    bool     m_RandomFrame  = false;    // 0x21 のフレームを乱数選択（AltanaView 準拠は true。--uvframe random）
     bool     m_QuadSize     = false;    // 0x21 クワッド寸法で描く（--size quad）
 
     TimTexture m_WhiteTex;
