@@ -1,4 +1,4 @@
-# List 選択 → 画面表示 設計書（v1 提案）
+# List 選択 → 画面表示 設計書（v1.1 / 2026-11-09 改訂）
 
 > 作成: EffectTest / ModelTest の実測に基づく設計提案。実装前のレビュー用。
 > この文書は「設計」であり、タスク分解の最終形は実装計画（別紙）で詰める。
@@ -36,6 +36,8 @@ List から選んだ項目を**そのまま画面に表示**する。Effect な�
   **D3D12 / Vulkan / OpenGL への移行は本設計の対象外**。
 - **画面描画は秒間 60 コマ（60 fps / 1 コマ = 16.67 ms）を前提**とする。待ち時間・遅延は**コマ数**で表す
   （秒で表す場合は 60 fps 換算。例: 7 コマ = 116.7 ms）。エフェクトの時間基準（`delay / 60`）と同一の時間軸を使う。
+  - 適用範囲: **UI・選択・デバウンスなどの待ちはコマ基準**で設計する。エフェクト/モーションの**進行は既存の実測 `dt`**
+    （`App.cpp:1177`、0.1 s クランプ）を維持する（60 fps 環境では実質 1/60 秒ステップ。挙動変更は本設計の対象外）。
 
 ### スコープ内
 - **起動時にベースエフェクト（`ROM\0\0.DAT`）を必ず先読み**（詳細は §4.6）
@@ -54,7 +56,7 @@ List から選んだ項目を**そのまま画面に表示**する。Effect な�
 
 | 項目 | EffectTest（現行） | ModelTest（参照実装） |
 |---|---|---|
-| 描画 | D3D11 自作ミニマム（`Gfx.cpp` 18KB、ビルボードのみ） | D3D11 フル（`Dx.cpp` 37KB、`Render.cpp` 18KB、スキニング/影/トゥーン） |
+| 描画 | D3D11 自作ミニマム（`Gfx.cpp` 18KB、ビルボードのみ） | D3D11 フル（branch `DX11`／`Dx.cpp` 37KB、`Render.cpp` 18KB、スキニング/影/トゥーン） |
 | モデル読込 | **なし** | `Model.cpp` 53KB / `Model_Mesh.cpp` 38KB / `Model_Anim.cpp` 29KB / `Model_Common.cpp` 30KB |
 | Effect | タイムライン + VM 完備（`Effect.cpp` 10KB, `EffectVm.cpp` 9KB, 実データ一致検証済） | なし |
 | List UI | パネル実装済（`ListDb` 7KB + `App.cpp` 内 UI、29 グループ / 最大 1,266 件、UTF-8/SJIS 自動判定） | 独自 UI（NPC/PC/装備/モーションのコンボ、`List/*.lst` 直読み） |
@@ -242,6 +244,9 @@ ID3D11ShaderResourceView* EffectBase_FindTexture(const char* name4); // 0x20
 const char*          EffectBase_Path();                             // ログ用
 ```
 
+> 関数名・構造体名は v1 の実装名を維持する（`ActionProgram` / `ListSelection.action` / `ListPanel_SetActions`）。
+> UI 上の呼称は **Schedule**（§0・§4.7）。
+
 ### 4.6 ベースエフェクト（`0/0` = `syst`）の起動時ロード
 
 **なぜ必要か**: `List/Effect/*.csv` の先頭行 `0/0,syst` が示すとおり、`ROM\0\0.DAT` は
@@ -292,7 +297,7 @@ ModelTest.exe --base
 [base] path=…\ROM\0\0.DAT chunks=1105 gen=320 tex=61 timeline=132 load_ms=0   ← --base（索引のみ / D3D なし）
 [base] path=…\ROM\0\0.DAT chunks=1105 gen=320 tex=61 timeline=132 load_ms=3   ← 起動時（DXT3 61 枚の SRV 生成込み）
 ```
-→ **起動時ロードのコストは 3 ms**。毎回読んでも体感影響なし（設計判断の裏付け）。
+→ **起動時ロードのコストは 3 ms（≈ 0.18 コマ）**。毎回読んでも体感影響なし（実測値であり、設計上の待ちではない）。
 
 ### 4.7 Schedule リスト設計（v2 / 2026-11-09）
 
@@ -307,7 +312,7 @@ ModelTest.exe --base
 | D3 | 用語は **Schedule** に統一（= `0x07`。AltanaView の `[NPC] Schedule` と同義）。v1 の「Action」は別名 | `AltanaView.ini` の `Schedule=` / 実測 `ROM\131\6.DAT` の `0x07`=39 件 |
 | D4 | **7 コマ（60 fps で 116.7 ms）静止後に確定**＋確定 index ガード（待ちはコマ基準） | 1,266 件リスト（R4）でのキー連打耐性 |
 | D5 | Schedule は**入れ替え**（蓄積しない＝常に選択中の 1 モデル分） | `0x07` はモデル DAT 内の資源。混在させると解決先が曖昧になる |
-| D6 | Schedule は**行の選択で即再生**（現行 combo の挙動を踏襲）。`R` リセット / `Space` 一時停止 | 既存操作との連続性（`App.cpp:469` / `:453`） |
+| D6 | Schedule は**行の選択で即再生**（現行の「選択＝再生」挙動を踏襲）。`R` リセット / `Space` 一時停止 | 既存操作との連続性（`App.cpp:469` / `:453`） |
 
 #### 4.7.2 コントロールと レイアウト
 
@@ -392,13 +397,13 @@ WM_COMMAND / IDC_SCHEDULE / LBN_SELCHANGE または LBN_DBLCLK
 | デバウンス | **7 コマ**（60 fps で 116.7 ms）静止後に確定。選択が来るたびにカウンタを 0 に戻す（↑↓ 長押し・連続クリックで DAT 読みが発火しない） |
 | 確定 index ガード | 同一グループ・同一 index は no-op（ダブルクリックの 2 回目を吸収） |
 | 再入フラグ | `g_CommitBusy` で `CommitSelection` の多重実行を抑止 |
-| タイマ破棄 | グループ変更（`FillItems`）で `KillTimer` |
+| 保留の破棄 | グループ変更（`FillItems`）で `g_PendingItem = -1` / `g_PendingFrames = 0`（確定待ちを取り消す） |
 
-**目標値**: 単一選択→Schedule 反映 **3 コマ以内（50 ms 以下）**（ROM1 最大 DAT、`load_ms` をログ出力）／1,266 件で ↑↓ 長押し 2 秒でも **60 fps 維持**（フレーム落ち 5% 未満）。
+**目標値**: 単一選択→Schedule 反映 **3 コマ以内（50 ms 以下）**（ROM1 最大 DAT、`load_ms` をログ出力）／1,266 件で ↑↓ 長押し **120 コマ（2 秒）**でも **60 fps 維持**（フレーム落ち 5% 未満）。
 
 > **本設計は秒間 60 コマを前提**とする。待ちは時間ではなく**コマ数**で持ち、実装も描画ループのフレームカウンタで消化する（`SetTimer` / `WM_TIMER` は使わない＝コマ基準を保証するため）。
 > 60 fps の根拠: エフェクトの時間基準が `delay / 60.0f`（`Effect.cpp:232`）、描画は **D3D11 + vsync**（`Gfx.cpp:102-113` の `DXGI_SWAP_CHAIN_DESC`＝`Windowed=TRUE` / `BufferCount=1` / `DXGI_SWAP_EFFECT_DISCARD`、`:310` の `Present(1,0)`）＝60 Hz のモニタで 60 fps。
-> 60 fps を下回る環境（30 Hz 等）では 7 コマ = 233 ms になるが、**60 fps 前提の帰結**として許容する（再生速度・位置は実測 `dt` のため影響を受けない）。
+> 保証対象は **60 fps を満たす環境**。それを下回る環境（30 Hz 等）は**本設計の対象外**とする（7 コマ = 233 ms となり待ちが伸びる。再生速度・位置は実測 `dt` のため影響を受けない）。
 
 #### 4.7.7 現行 EffectTest への影響（`App.cpp` のみ）
 
@@ -408,7 +413,7 @@ WM_COMMAND / IDC_SCHEDULE / LBN_SELCHANGE または LBN_DBLCLK
 | グローバル（`:64-75`） | `g_hAction` / `g_ActionNames` | `g_hSchedule` / `g_hScheduleLabel` / `g_ScheduleNames` / `g_PendingItem` / `g_PendingFrames` / `g_CommittedItem` / `g_CommittedGroup` / `g_CommitBusy` |
 | `BuildPanelControls`（`:537`） | COMBOBOX 1 個 | LISTBOX＋STATIC に置換、初期は `EnableWindow(FALSE)` |
 | `LayoutPanel`（`:524`） | 3 要素 | 上記の式へ |
-| `FillItems`（`:575`） | `CB_RESETCONTENT` | `KillTimer`、Schedule 空・無効、確定 index リセット |
+| `FillItems`（`:575`） | `CB_RESETCONTENT` | 確定待ちの破棄（`g_PendingItem = -1`）、Schedule 空・無効、確定 index リセット |
 | `LoadListSelection`（`:599`） | 確定処理 | `CommitSelection` に改称（§4.7.3 の分岐） |
 | `PlaySelectedAction`（`:648`） | `g_ActionNames` | `PlaySelectedSchedule` に改称（中身は同一） |
 | `PanelProc`（`:686-704`） | `LBN_DBLCLK` のみ | `LBN_SELCHANGE` を追加（選択を pending に記録）、`IDC_SCHEDULE` の `LBN_SELCHANGE`/`LBN_DBLCLK`。**`WM_TIMER` は使わない** |
@@ -428,7 +433,7 @@ WM_COMMAND / IDC_SCHEDULE / LBN_SELCHANGE または LBN_DBLCLK
 | 回帰（Effect） | `--shot "…\ROM\11\17.DAT" out.png` | timeline=18 / spawn=8 / 3.3333 s / 非背景 > 6,000 |
 | UI 手動 | `NPC ROM1` → `ヒューム♀NPC (3-11)` を**シングルクリック** | ラベル `Schedule (n)`、リストに `0x07` 名が並ぶ |
 | UI 手動（失敗系） | 存在しない ROM / 壊れた DAT | 背景のみに戻り、ログに `clear:` |
-| 性能 | ↑↓ 長押し 2 秒・連続クリック（60 fps 維持を計測） | §4.7.6 の目標値 |
+| 性能 | ↑↓ 長押し **120 コマ（2 秒）**・連続クリック（60 fps 維持を計測） | §4.7.6 の目標値 |
 
 
 
@@ -488,7 +493,7 @@ ModelTest.exe --action "ROM\131\6.DAT" atk0
 ### P3: Effect 再生の移植（1〜1.5 日）
 **成果物**: `EffectView.h/.cpp`, `EffectBillboard.h/.cpp`（EffectTest から移植）
 **受け入れ基準**
-- `Effect: Black Magic` → `Fire` で、EffectTest と**同一の数値**（18 命令 / 8 生成 / 3.3333 s）
+- `Effect: Black Magic` → `Fire` で、EffectTest と**同一の数値**（18 命令 / 8 生成 / **3.3333 s = 200 コマ**）
 - 画面にエフェクトが出る（加算合成・テクスチャ付き）
 **検証**
 ```
@@ -500,7 +505,7 @@ ModelTest.exe --effect "ROM\11\17.DAT" --shot out_fire.png
 **受け入れ基準**
 - NPC（P1/P2）と Effect（P3）が**同じフレームに共存**して描画される
 - Effect はモデルの背後/前面どちらでも破綻しない（Z 書き込みなし・加算合成）
-- 60fps を維持（モデル 1 体 + エフェクト 8 インスタンス）
+- **60 fps（16.67 ms/コマ）を維持**（モデル 1 体 + エフェクト 8 インスタンス）
 - （可能なら）対象ボーン位置へエフェクトを追従させる
 
 ### P5: 仕上げ（0.5 日）
