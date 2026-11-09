@@ -388,6 +388,9 @@ WM_COMMAND / IDC_SCHEDULE / LBN_SELCHANGE または LBN_DBLCLK
 
 **目標値**: 単一選択→Schedule 反映 **< 50 ms**（ROM1 最大 DAT、`load_ms` をログ出力）／1,266 件で ↑↓ 長押し 2 秒のフレーム落ち 5% 未満。
 
+> **120 ms はフレーム数ではなく実時間（壁時計）の待ち**（`SetTimer`）。60 Hz 表示で約 7 フレーム、30 fps なら約 4 フレーム相当だが、**描画 fps には依存させない**（モニタのリフレッシュレートで挙動が変わらないようにするため）。
+> 参考: 本アプリの**エフェクト時間の基準は固定 60 fps**（`Effect.cpp:232` の `delay / 60.0f`）。進行は実測 `dt`（`App.cpp:1177`、0.1 s でクランプ）、表示は vsync（`Gfx.cpp:310` の `Present(1,0)`）に従う。
+
 #### 4.7.7 現行 EffectTest への影響（`App.cpp` のみ）
 
 | 箇所 | 現状 | 変更 |
