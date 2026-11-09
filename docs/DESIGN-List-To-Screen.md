@@ -2,6 +2,9 @@
 
 > 作成: EffectTest / ModelTest の実測に基づく設計提案。実装前のレビュー用。
 > この文書は「設計」であり、タスク分解の最終形は実装計画（別紙）で詰める。
+>
+> **改訂 v1.1（2026-11-09）**: 表示トリガーを**項目の単一選択**へ、3 段目を **Schedule の LISTBOX** へ変更。
+> UI と選択フローの正本は `docs/superpowers/specs/2026-11-09-model-select-schedule-design.md`。
 
 ## 0. 前提と用語
 
@@ -9,7 +12,8 @@
   形式は `ID,表示名`（ID は `11/17` または `1-131-6`）。
 - **Effect** = エフェクト DAT（`0x07`=`main` タイムライン、`0x05`=ジェネレータ）
 - **モデル** = NPC/PC の DAT（`0x2A`=メッシュ、`0x29`=ボーン、`0x2B`=モーション、`0x20`=テクスチャ）
-- **Action** = NPC DAT 内の `0x07` ブロック（`atk0`, `cast`, `vatk` …）。中は `0x03/0x57/0x0A` で
+- **Schedule** = モデル DAT 内の `0x07` ブロック（`atk0`, `cast`, `vatk` …）。**AltanaView の Schedule と同義**
+  （v1 では「Action」と呼んでいた。以降は Schedule に統一。実装名 `ActionProgram` / `--action` は v1 のまま）。中は `0x03/0x57/0x0A` で
   `0x2B`/`0x3D` のモーション名を参照する「振り付け」。
 - **Base（ベースエフェクト）** = `ROM[n]\0\0.DAT`（先頭ブロック名 `syst`）。
   `List/Effect/*.csv` の先頭行 `0/0,syst` がこれ。**全エフェクトが共有する土台**
@@ -19,18 +23,19 @@
 ## 1. 目的・スコープ
 
 ### 目的
-List から選んだ項目を**そのまま画面に表示**する。Effect なら再生、NPC ならモデル表示＋Action 再生。
+List から選んだ項目を**そのまま画面に表示**する。Effect なら再生、NPC ならモデル表示＋Schedule 再生。
 
 **表示の規約（重要）**
 - **起動時は何も表示しない**（背景のみ。座標軸・グリッド・既定モデル/エフェクトも出さない）。
-- **表示のトリガーは List の項目選択**（ダブルクリック＝確定）。Action の選択は、既に表示中のモデルの動きを切り替える操作。
+- **表示のトリガーは List の項目の単一選択**（クリック。ダブルクリックも同義＝後方互換）。
+  Schedule の選択は、既に表示中のモデルの Schedule を再生する操作（2026-11-09 変更。v1 はダブルクリック確定だった）。
 - ベースエフェクト（`0/0`）は起動時に読むが**索引のみ**で、描画は一切しない。
 
 ### スコープ内
 - **起動時にベースエフェクト（`ROM\0\0.DAT`）を必ず先読み**（詳細は §4.6）
-- List のグループ／項目／Action の 3 段選択 UI
+- List のグループ／項目／Schedule の 3 段選択 UI（3 段目は常時見える LISTBOX）
 - NPC 項目 → モデル（メッシュ・ボーン・テクスチャ）表示
-- Action 項目 → 対応モーションの再生（骨アニメーション）
+- Schedule 項目 → 対応モーションの再生（骨アニメーション）
 - Effect 項目 → 既存の effect motion 再生（タイムライン + 2 段 VM）
 - Effect と NPC の**同時再生**（P4、任意）
 
@@ -74,7 +79,7 @@ bool CNPC::LoadNPCMotion() {
 ```
 - 動きの一覧は **同一 DAT の `0x2B`**。ModelTest の NPC モーション combo は
   その**先頭 3 文字**（`at0, at1, at2, stm, btl, cor, dbi, …`）。
-- Action（`0x07`）の参照名は **先頭 3 文字一致**で解決。例：`atk4`→0x3D、`vatk`→0x07（入れ子 Action）。
+- Schedule（`0x07`）の参照名は **先頭 3 文字一致**で解決。例：`atk4`→0x3D、`vatk`→0x07（入れ子 Schedule）。
 - **一致しない参照はモーション無しとして無視**（`hwat` は同 DAT に存在せず、外部 DAT 探索はしない）。
 
 ### テクスチャの実測（`ROM\131\6.DAT`）
@@ -109,12 +114,12 @@ bool CNPC::LoadNPCMotion() {
 ┌────────────────────────── ModelTest.exe ──────────────────────────┐
 │ WinMain.cpp（既存 UI）                                             │
 │   ├─ 既存: 種族/装備/モーション/Playback                           │
-│   └─ 追加: ListPanel（グループ／項目／Action の 3 コンボ）  ★新規   │
+│   └─ 追加: ListPanel（グループCB／項目LB／Schedule LB）  ★新規   │
 │                                                                    │
 │  選択ハンドラ（★新規: ListBridge.cpp）                             │
 │   ├─ NPC 項目 → CModel::SetBody/LoadNPC/InitialTransform/          │
 │   │              ConvertMesh          （既存 API を呼ぶだけ）       │
-│   ├─ Action   → ActionProgram（★新規）→ 0x2B 名解決 →             │
+│   ├─ Schedule → ActionProgram（★新規: 実装名は v1 のまま）→ 0x2B 名解決 →   │
 │   │              SetMotionName/LoadNPCMotion（既存 API）           │
 │   └─ Effect 項目 → EffectView（★新規: EffectTest から移植）        │
 │                                                                    │
@@ -130,10 +135,10 @@ bool CNPC::LoadNPCMotion() {
 **NPC を選んだとき**
 ```
 グループ combo → ListDb::Items(group)            … 1,266 件でも遅延ロードで O(1)
-項目 dblclick  → ListDb::ResolvePath → "…\ROM\131\6.DAT"
+項目を単一選択 → ListDb::ResolvePath → "…\ROM\131\6.DAT"
               → CModel::SetBody(dno); LoadNPC(); InitialTransform(); ConvertMesh()
-              → DAT の 0x07 名（39 個）を Action combo へ
-Action 選択    → ActionProgram::Parse(dat, "atk0")   … 命令列 6 件
+              → DAT の 0x07 名（39 個）を Schedule リストへ
+Schedule 選択  → ActionProgram::Parse(dat, "atk0")   … 命令列 6 件
               → 参照名の**先頭 3 文字**で同一 DAT の 0x2B を前方一致解決
                  （"vatk" は 0x07 の入れ子 Action、"hwat" は一致無し＝無視）
               → CModel::SetMotionName(name); LoadNPCMotion(); SetTime(0)
@@ -153,7 +158,7 @@ WinMain 起動 → FFXI 検出 → List 読み込み（29 グループ）
 **Effect を選んだとき**
 ```
 グループ combo → ListDb::Items(group)            … Effect カテゴリ
-項目 dblclick  → ResolvePath → "…\ROM\11\17.DAT"
+項目を単一選択 → ResolvePath → "…\ROM\11\17.DAT"
               → EffectView::Load(path)
                   EffectContext::Build()        … main タイムライン + 0x05 索引
                   BuildTextures()               … 0x20 → SRV（既存 Tim.cpp 相当）
@@ -167,8 +172,8 @@ WinMain 起動 → FFXI 検出 → List 読み込み（29 グループ）
 | コントロール | ID | 内容 |
 |---|---|---|
 | グループ | `IDC_LIST_GROUP` | `NPC ROM1`〜`ROM9` / `Effect: White Magic` … |
-| 項目リスト | `IDC_LIST_ITEMS` | `名前 (ID)` を列挙。ダブルクリックで確定 |
-| Action | `IDC_LIST_ACTION` | NPC のときだけ有効。`0x07` 名を列挙 |
+| 項目リスト | `IDC_LIST_ITEMS` | `名前 (ID)` を列挙。**単一選択で確定**（ダブルクリックも同義） |
+| Schedule | `IDC_LIST_SCHEDULE` | NPC のときだけ有効。`0x07` 名を**常時見える LISTBOX** に列挙し、件数をラベルに表示（v1 の「Action」） |
 | Effect 同時再生 | `IDC_LIST_WITHEFFECT` | チェックで Effect を併走（P4） |
 
 - 「表示切替」ラジオに **`List`** を 1 つ追加し、選択中は既存の種族/装備コンボを無効化する。
@@ -256,7 +261,7 @@ const char*          EffectBase_Path();                             // ログ用
 2) 見つからなければ EffectBase（ROM\0\0.DAT）の 0x05 / 0x07 / 0x20
 3) どちらにも無ければ「未解決」としてスキップ（ログに記録）
 ```
-> NPC 側（§4.2 の Action→モーション）は従来どおり**同一 DAT の `0x2B` を 3 文字一致**で解決し、
+> NPC 側（§4.2 の Schedule→モーション）は従来どおり**同一 DAT の `0x2B` を 3 文字一致**で解決し、
 > ベースは**参照しない**（モデルのモーションはモデル DAT 内で完結するため）。
 
 **ROM ごとの `0/0` について**
@@ -312,7 +317,8 @@ ModelTest.exe --base
 ### P1: NPC モデルを表示（0.5 日）
 **成果物**: `ListBridge.cpp`（選択→モデル読み込み）
 **受け入れ基準**
-- `NPC ROM1` → `裏ゴブリン` を選ぶとモデルが画面に出る
+- `NPC ROM1` → `裏ゴブリン` を**単一選択**するとモデルが画面に出る
+- 同じ操作の直後に **Schedule リストが埋まる**（`ROM\131\6.DAT` = 39 件、ラベル `Schedule (39)`）
 - 既存の PC/NPC コンボによる表示が**従来どおり動く**（回帰なし）
 - テクスチャが貼られている（白一色でない）
 **検証**
@@ -321,14 +327,14 @@ ModelTest.exe --shot "ROM\131\6.DAT" out_npc.png
 期待: 非背景ピクセル > 0（4px 間引きで数千）
 ```
 
-### P2: Action 選択 → モーション再生（1 日）
+### P2: Schedule 選択 → モーション再生（1 日）
 **成果物**: `ActionProgram.h/.cpp`（`0x07` 解析・参照名解決）
 **受け入れ基準**
-- Action コンボに `0x07` 名が 39 件並ぶ（`ntob, pary, atk0, cast, vatk, dead …`）
+- Schedule リストに `0x07` 名が 39 件並ぶ（`ntob, pary, atk0, cast, vatk, dead …`）。**モデルを単一選択しただけで埋まる**
 - `atk0` 選択で命令列 6 件がログに出て、参照名 `hwat`/`vatk` が**先頭 3 文字一致**で判定される
   （`vatk`→0x07 入れ子、`hwat`→一致無し＝警告ログのみ）
 - モデルが実際に動く（`MaxMotionTime() > 0`、再生で骨が変化）
-- 併せて **0x2B の 3 文字一覧**（`at0,at1,at2,btl,cor,…`）も combo に出し、Action と独立に選べるようにする（ModelTest 互換）
+- 併せて **0x2B の 3 文字一覧**（`at0,at1,at2,btl,cor,…`）も一覧に出し、Schedule と独立に選べるようにする（ModelTest 互換）
 **検証**
 ```
 ModelTest.exe --action "ROM\131\6.DAT" atk0
@@ -366,7 +372,7 @@ ModelTest.exe --effect "ROM\11\17.DAT" --shot out_fire.png
 | 層 | 手法 | 判定 |
 |---|---|---|
 | List 解析 | ヘッドレス `--list` | グループ数・件数・解決パスを**ゴールデン値**と比較 |
-| Action 解析 | ヘッドレス `--action` | 命令数・`op`/`name` 列をゴールデン値と比較 |
+| Schedule 解析 | ヘッドレス `--action` | 命令数・`op`/`name` 列をゴールデン値と比較 |
 | Effect | ヘッドレス `--effect` | 18 命令 / 8 生成 / 3.3333 s（EffectTest と一致） |
 | 描画 | `--shot` で PNG → 画素検査 | 非背景サンプル数・最大 RGB 和 |
 | 回帰 | 既存の PC/NPC 表示、4 面図、保存系 | 例外・クラッシュなし、出力ファイル生成 |
@@ -392,10 +398,15 @@ ModelTest.exe --effect "ROM\11\17.DAT" --shot out_fire.png
 
 ## 8. 意思決定が必要な点（レビュー依頼）
 
+> **2026-11-09 更新（決定済み）**
+> - 表示トリガーは **項目の単一選択**（ダブルクリックは同義）。
+> - 3 段目は **Schedule の LISTBOX**（常時表示・件数ラベル付き）。蓄積はしない。
+> - 詳細設計: `docs/superpowers/specs/2026-11-09-model-select-schedule-design.md`（正本）
+
 1. **土台アプリ**: 案 D（ModelTest を拡張）で進めてよいか？
    - 代替: 案 C（EffectTest にモデル描画を新規実装＝工数 2〜3 倍、リスク中）
 2. **初期リリースに P4（同時再生）を含めるか**、まずは P1〜P3 で「List から選んで表示」を完成させるか
-3. **Action → Effect の紐付け**（FFXI のデータに直接の対応表が無い）
+3. **Schedule → Effect の紐付け**（FFXI のデータに直接の対応表が無い）
    - (a) 紐付けしない（利用者が別々に選ぶ）
    - (b) 名前一致で自動（`Fire` と `casf` 等は一致しないため実質不可）
    - (c) 手動マップ CSV（`List/ActionEffect.csv` を新設し、`1-131-6,atk0,11/17` のように書く）
