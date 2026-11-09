@@ -48,6 +48,7 @@ namespace
                                   //     横 1.6 m 間隔で並び「横長の帯」になる（実測: 11\18 の
                                   //     fire が aspect 2.3 の横帯。参照は 0.40 の縦柱）
     bool  g_ZUp       = false;    // 粒子位置を Z-up → Y-up 変換する（--zup on）
+    bool  g_OpStat    = false;    // 実行された VM op の集計を出力する（--opstat）
     bool  g_Trace     = false;
     bool  g_NoTexture = false;    // W: テクスチャを使わず白で描く（デバッグ）
     bool  g_ShowAxes  = false;    // X: 座標軸の表示（既定 OFF。起動時は何も描かない）
@@ -1624,6 +1625,12 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
                 continue;
             }
 
+            if (_stricmp(tok, "--opstat") == 0)
+            {
+                g_OpStat = true;
+                continue;
+            }
+
             if (_stricmp(tok, "--emit") == 0)
             {
                 char mode[MAX_PATH] = {};
@@ -1958,6 +1965,19 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
         wchar_t wpng[MAX_PATH] = {};
         MultiByteToWideChar(CP_ACP, 0, png, -1, wpng, MAX_PATH);
         const bool ok = GfxSaveBackBufferPNG(wpng);
+
+        // --opstat: 実際に実行された VM op の集計（VM#1 が生成時のみ走るため重要）
+        if (g_OpStat)
+        {
+            for (int vm = 1; vm <= 2; ++vm)
+            {
+                const std::vector<OpCount> st = EffectOpStat(vm);
+                if (st.empty()) continue;
+                Log("[opstat] VM#%d : %zu kinds", vm, st.size());
+                for (const OpCount& oc : st)
+                    Log("[opstat]   op 0x%02X x%d", oc.op, oc.count);
+            }
+        }
 
         Log("[shot] dat=%s png=%s blend=%s uvmode=%s color=%s size=%s frames=%d inst=%zu tex=%zu ok=%d",
             dat, png, GfxBlendModeName(GfxGetBlendMode()),

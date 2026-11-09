@@ -12,6 +12,7 @@
 #include "Effect.h"
 #include <cmath>
 #include <cstdlib>
+#include <algorithm>
 
 namespace
 {
@@ -22,11 +23,29 @@ namespace
 
     bool g_EmitMode = true;
     int  g_EmitRate = 24;          // 既定の放出レート（個/秒）。--emitrate で変更
+    int  g_OpStat[3][256] = {};    // [vm][op] の実行回数（--opstat）
 }
 
 void EffectSetEmitMode(bool on) { g_EmitMode = on; }
 bool EffectEmitMode() { return g_EmitMode; }
 void EffectSetEmitRate(int n) { g_EmitRate = (n > 0) ? n : 1; }
+
+void EffectOpStatReset()
+{
+    for (int v = 0; v < 3; ++v)
+        for (int i = 0; i < 256; ++i) g_OpStat[v][i] = 0;
+}
+
+std::vector<OpCount> EffectOpStat(int vm)
+{
+    std::vector<OpCount> out;
+    if (vm < 1 || vm > 2) return out;
+    for (int i = 0; i < 256; ++i)
+        if (g_OpStat[vm][i] > 0) out.push_back(OpCount{ i, g_OpStat[vm][i] });
+    std::sort(out.begin(), out.end(),
+              [](const OpCount& a, const OpCount& b) { return a.count > b.count; });
+    return out;
+}
 
 //======================================================================
 //  VM#1 : 目標値評価（FUN_0040e650）
@@ -49,6 +68,7 @@ static void Vm1(const MotionInstance& mi, SubUnit& su, const EffectContext& ctx)
         memcpy(&w0, p, 4);
         const uint8_t op = (uint8_t)(w0 & 0xFF);
         if (op == 0) break;                       // 終端
+        ++g_OpStat[1][op];                        // --opstat 用
 
         const float* arg = reinterpret_cast<const float*>(p + 4);
         const uint32_t dest = w0 >> 13;
@@ -283,6 +303,8 @@ static bool Vm2(const MotionInstance& mi, SubUnit& su, float dt, float rootDurat
         memcpy(&w0, p, 4);
         const uint8_t op = (uint8_t)(w0 & 0xFF);
         if (op == 0) break;
+
+        ++g_OpStat[2][op];                        // --opstat 用
 
         const float* arg = reinterpret_cast<const float*>(p + 4);
         const uint32_t dest = w0 >> 13;

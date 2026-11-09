@@ -202,6 +202,11 @@ void EffectSetEmitMode(bool on);
 bool EffectEmitMode();
 void EffectSetEmitRate(int n);
 
+// 実行された VM op の集計（--opstat）。vm=1: VM#1 / vm=2: VM#2
+struct OpCount { int op; int count; };
+void EffectOpStatReset();
+std::vector<OpCount> EffectOpStat(int vm);
+
 //----------------------------------------------------------------------
 // エフェクトコンテキスト（AltanaView の EffectRoot 相当）
 //----------------------------------------------------------------------
