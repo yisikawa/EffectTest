@@ -134,6 +134,8 @@ struct MotionInstance
     int                   spawnOp   = 2;
     float                 uv[4]     = { 0.0f, 0.0f, 1.0f, 1.0f };   // 0x21 のフレーム矩形
     int                   frameIdx  = 0;                             // 現在のフレーム番号
+    float                 quadHalf[2] = { 0.0f, 0.0f };               // 0x21 クワッドの半幅・半高
+    float                 quadCenter[2] = { 0.0f, 0.0f };             // 同・中心オフセット
 
     void Reset(const DatFile* d, const GeneratorBlock* g, float start, int tex, int op);
     void Eval(const class EffectContext& ctx, float dt);
@@ -168,6 +170,10 @@ public:
     // 0x21（テクスチャフレーム）の UV 適用（既定 ON。--uv full で従来動作）
     void SetUseTexFrames(bool on) { m_UseTexFrames = on; }
     bool UseTexFrames() const { return m_UseTexFrames; }
+
+    // ビルボード寸法に 0x21 クワッドの範囲を使う（--size quad）
+    void SetQuadSize(bool on) { m_QuadSize = on; }
+    bool QuadSize() const { return m_QuadSize; }
 
     uint32_t ProgStart() const { return m_ProgStart; }
     size_t   Ip()       const { return m_Ip; }
@@ -226,6 +232,7 @@ private:
     float    m_Speed    = 1.0f;
     uint8_t  m_LastColor[4] = { 255, 255, 255, 255 };
     bool     m_UseTexFrames = true;     // 0x21 の UV 適用（--uv full で無効化）
+    bool     m_QuadSize     = false;    // 0x21 クワッド寸法で描く（--size quad）
 
     TimTexture m_WhiteTex;
 };

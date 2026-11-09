@@ -323,7 +323,8 @@ next < 16 で終端 / pos += next
 | 起動しても `(no data)` | 引数なし起動時に何も読み込まない / `DragAcceptFiles` 未呼び出し | **FFXI 自動検出 + 既定エフェクト自動読込**、D&D 有効化 |
 | テクスチャ 0 枚 | `fourCC` のバイト順が逆（`'DXT3'` は `0x44585433`） | MSVC 複数文字リテラルで比較 |
 | 軸は出るがエフェクトが出ない | 行列を**転置せず** cbuffer へ（HLSL は列優先） | `XMMatrixMultiplyTranspose` |
-| エフェクトが真っ黒 | FFXI のエフェクトテクスチャは **RGB=0 で alpha に形状**を持つ | `max(rgb, alpha)` を輝度として加算合成 |
+| エフェクトが真っ黒 | FFXI のエフェクトテクスチャは **RGB=0 で alpha に形状**を持つ | `max(rgb, alpha)` を輝度として扱う |
+| **Fire が青い**（本来は橙） | FFXI の TIM は **BGRA 格納**。そのまま SRV 化すると R/B が入れ替わる | ピクセルシェーダで `t.rgb = t.bgr`（既定 `--color bgr`） |
 | PNG 保存が `REGDB_E_CLASSNOTREG` | `CoCreateInstance` に interface IID を渡していた | `CLSID_WICImagingFactory` |
 | **List が文字化け**（`繧ｪ繝ｼ繧ｯ` 等） | `.lst` は **UTF-8** なのに ANSI(CP932) の ListBox へ生バイトを渡していた | 読み込み時に **UTF-8 / Shift-JIS を自動判定して UTF-16 化**し、コントロールを **Unicode(W) 版**へ変更 |
 
@@ -333,7 +334,7 @@ next < 16 で終端 / pos += next
 
 | 指標 | 修正前（軸のみ） | 加算 `ONE/ONE`（旧既定） | **既定 `alpha_add` + `0x21`** |
 |---|---|---|---|
-| 背景以外のサンプル数 | 13 | 8,206 | **7,968** |
+| 背景以外のサンプル数 | 13 | 8,206 | **7,969** |
 | 最大 RGB 合計 | 456 | 765（白飛び） | **686** |
 
 スクリーンショット: `shot_fire.png`（`--shot` で再生成可能）
@@ -355,18 +356,19 @@ AltanaView の `SetRenderState` を静的に走査すると、エフェクト描
 - ヘッドレス: `--shot --blend alpha_add|add|alpha "<dat>" out.png`（`[shot] … blend=<mode>` を出力）
 - テクスチャフレーム: `--shot --uv 0x21|full "<dat>" out.png`（既定 `uvmode=0x21`。`full` で全面サンプリングに戻る）
 - 時刻指定: `--shot --frames N "<dat>" out.png`（既定 90 = 1.5 s。1 フレーム = 1/60 s）
+- 色順: `--shot --color bgr|rgb "<dat>" out.png`（既定 `bgr` = FFXI の BGRA 格納に合わせて R/B 入替。`rgb` で従来動作）
 - 参照動画との比較: `ffmpeg -ss <3.2 + N/60> -i fire2.mp4 -frames:v 1 -vf "crop=620:900:640:90" cmp.png`（`docs/VERIFY-PLAN-Schedule.md` V-15）
 - 画素統計: `powershell -NoProfile -ExecutionPolicy Bypass -File tools\ShotStats.ps1 -Path out_fire.png`
   → `sampled=57600 nonBg=7950 maxSum=686`
 
 | DAT | `add` | `alpha_add` | `alpha` |
 |---|---|---|---|
-| `11\17`（Fire） | 8,206 / 765 | **7,968 / 686** | 6,532 / 639 |
-| `11\18`（Fire II） | — | **2,780 / 713** | — |
+| `11\17`（Fire） | 8,206 / 765 | **7,969 / 686** | 6,487 / 639 |
+| `11\18`（Fire II） | — | **2,779 / 705** | — |
 | `11\22`（Blizzard） | — | **6,596 / 557** | — |
 | `12\43`（Foe Requiem） | 13,150 / 765 | **13,150 / 560** | 13,150 / 469 |
 
-> `--uv full`（`0x21` を使わない）では Fire 7,950 / 686、Fire II 2,484 / 725。
+> `--uv full`（`0x21` を使わない）では Fire 7,951 / 686、Fire II 2,481 / 723。
 > `11\18` の板に 4×4 の炎タイルが見えるのは、その DAT の該当 generator が `0x21` を持たず、セル指定が VM 命令側にあるため。
 >
 > テクスチャ名は `0x20` の 16 B 名 = **`<グループ 8><specific 8>`** で、`0x21` の `+0x20`（specific）と照合して選ぶ

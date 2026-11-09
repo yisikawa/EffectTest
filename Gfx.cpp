@@ -21,6 +21,7 @@ struct CBData
     XMFLOAT4   axisU;
     XMFLOAT4   color;
     XMFLOAT4   uv;          // uvRect = (u0, v0, u1, v1)。0x21 のフレーム矩形
+    XMFLOAT4   opt;         // x = 色順（0: RGB / 1: BGR 入替）
 };
 
 static const char* kShader =
@@ -32,6 +33,7 @@ static const char* kShader =
 "    float4   gAxisU;\n"
 "    float4   gColor;\n"
 "    float4   gUv;\n"
+"    float4   gOpt;\n"
 
 "};\n"
 
@@ -54,6 +56,7 @@ static const char* kShader =
 "float4 PSMain(VSOut i) : SV_TARGET\n"
 "{\n"
 "    float4 t = gTex.Sample(gSmp, i.uv);\n"
+"    if (gOpt.x > 0.5) t.rgb = t.bgr;   // FFXI の TIM は BGRA 格納\n"
 "    // FFXI のエフェクト用テクスチャは RGB=0 で alpha に形状を持つものが多い。\n"
 "    // そのため「RGB と alpha の大きい方」を輝度として扱う。\n"
 "    float3 s = max(t.rgb, float3(t.a, t.a, t.a));\n"
@@ -74,6 +77,7 @@ namespace
     ID3D11DepthStencilState* g_DSS     = nullptr;
     ID3D11BlendState*        g_Blends[GFX_BLEND_COUNT] = {};
     GfxBlendMode             g_BlendMode = GFX_BLEND_ALPHA_ADD;
+    bool                     g_ColorSwap = true;    // 既定 BGR→RGB 入替
     ID3D11RasterizerState*   g_Raster  = nullptr;
     ID3D11SamplerState*      g_Sampler = nullptr;
     ID3D11VertexShader*      g_VS      = nullptr;
@@ -309,6 +313,9 @@ void GfxSetBlendMode(GfxBlendMode mode)
 
 GfxBlendMode GfxGetBlendMode() { return g_BlendMode; }
 
+void GfxSetColorSwap(bool bgr) { g_ColorSwap = bgr; }
+bool GfxGetColorSwap() { return g_ColorSwap; }
+
 const char* GfxBlendModeName(GfxBlendMode mode)
 {
     switch (mode)
@@ -378,6 +385,7 @@ void GfxDrawQuad(const float center[3], const float axisRight[3], const float ax
     cb->color  = XMFLOAT4(rgba[0], rgba[1], rgba[2], rgba[3]);
     cb->uv     = (uvRect != nullptr) ? XMFLOAT4(uvRect[0], uvRect[1], uvRect[2], uvRect[3])
                                      : XMFLOAT4(0.0f, 0.0f, 1.0f, 1.0f);
+    cb->opt    = XMFLOAT4(g_ColorSwap ? 1.0f : 0.0f, 0.0f, 0.0f, 0.0f);
 
     g_Context->Unmap(g_CB, 0);
 

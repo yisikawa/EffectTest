@@ -278,6 +278,10 @@ void MotionInstance::Eval(const EffectContext& ctx, float dt)
         frameIdx = idx;
         const TexFrame& f = gen->texFrames[idx];
         uv[0] = f.u0; uv[1] = f.v0; uv[2] = f.u1; uv[3] = f.v1;
+        quadHalf[0]   = (f.x1 - f.x0) * 0.5f;
+        quadHalf[1]   = (f.y1 - f.y0) * 0.5f;
+        quadCenter[0] = (f.x1 + f.x0) * 0.5f;
+        quadCenter[1] = (f.y1 + f.y0) * 0.5f;
     }
 }
 

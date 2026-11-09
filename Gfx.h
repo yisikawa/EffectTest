@@ -50,6 +50,10 @@ void         GfxSetBlendMode(GfxBlendMode mode);
 GfxBlendMode GfxGetBlendMode();
 const char*  GfxBlendModeName(GfxBlendMode mode);
 
+// テクスチャの色順（FFXI の TIM は BGRA 格納のため、既定で B/R を入れ替える）
+void GfxSetColorSwap(bool bgr);
+bool GfxGetColorSwap();
+
 ID3D11Device*        GfxDevice();
 ID3D11DeviceContext* GfxContext();
 

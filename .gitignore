@@ -32,6 +32,12 @@ effecttest_shot_diag.txt
 /cmp_v_*.png
 /ref_cmp_*.png
 /g_*.png
+/k_*.png
+/col_*.png
+/bgr_cmp_*.png
+/quad_*.png
+/det_*.png
+/rgb60.png
 /yavg.txt
 /fire2.mp4
 effecttest_trace.csv

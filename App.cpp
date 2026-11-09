@@ -399,8 +399,19 @@ static void RenderScene(bool present)
         const float sx  = (s[0] > 0.001f) ? s[0] : 1.0f;
         const float sy2 = (s[1] > 0.001f) ? s[1] : 1.0f;
 
-        const float halfW = g_SizeScale * sx;
-        const float halfH = g_SizeScale * sy2;
+        // 0x21 クワッドのローカル範囲（±2 など）を寸法に使う場合（--size quad）
+        float halfW = g_SizeScale * sx;
+        float halfH = g_SizeScale * sy2;
+        if (g_Effect.QuadSize() && mi.quadHalf[0] > 0.0f && mi.quadHalf[1] > 0.0f)
+        {
+            halfW = g_SizeScale * mi.quadHalf[0] * sx;
+            halfH = g_SizeScale * mi.quadHalf[1] * sy2;
+
+            // クワッド中心のオフセット（ローカル xy）
+            center[0] += right[0] * mi.quadCenter[0] + up[0] * mi.quadCenter[1];
+            center[1] += right[1] * mi.quadCenter[0] + up[1] * mi.quadCenter[1];
+            center[2] += right[2] * mi.quadCenter[0] + up[2] * mi.quadCenter[1];
+        }
 
         const float axisR[3] = { right[0] * halfW, right[1] * halfW, right[2] * halfW };
         const float axisU[3] = { up[0] * halfH,    up[1] * halfH,    up[2] * halfH };
@@ -1191,6 +1202,26 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
                 continue;
             }
 
+            if (_stricmp(tok, "--size") == 0)
+            {
+                char mode[MAX_PATH] = {};
+                if (!NextToken(p, mode, MAX_PATH)) return 2;
+                if      (_stricmp(mode, "quad") == 0) g_Effect.SetQuadSize(true);
+                else if (_stricmp(mode, "scale") == 0) g_Effect.SetQuadSize(false);
+                else { Log("[shot] unknown size: %s", mode); return 2; }
+                continue;
+            }
+
+            if (_stricmp(tok, "--color") == 0)
+            {
+                char mode[MAX_PATH] = {};
+                if (!NextToken(p, mode, MAX_PATH)) return 2;
+                if      (_stricmp(mode, "bgr") == 0) GfxSetColorSwap(true);
+                else if (_stricmp(mode, "rgb") == 0) GfxSetColorSwap(false);
+                else { Log("[shot] unknown color: %s", mode); return 2; }
+                continue;
+            }
+
             if (_stricmp(tok, "--frames") == 0)
             {
                 char n[MAX_PATH] = {};
@@ -1256,9 +1287,11 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
         MultiByteToWideChar(CP_ACP, 0, png, -1, wpng, MAX_PATH);
         const bool ok = GfxSaveBackBufferPNG(wpng);
 
-        Log("[shot] dat=%s png=%s blend=%s uvmode=%s frames=%d inst=%zu tex=%zu ok=%d",
+        Log("[shot] dat=%s png=%s blend=%s uvmode=%s color=%s size=%s frames=%d inst=%zu tex=%zu ok=%d",
             dat, png, GfxBlendModeName(GfxGetBlendMode()),
-            g_Effect.UseTexFrames() ? "0x21" : "full", frames,
+            g_Effect.UseTexFrames() ? "0x21" : "full",
+            GfxGetColorSwap() ? "bgr" : "rgb",
+            g_Effect.QuadSize() ? "quad" : "scale", frames,
             g_Effect.Instances().size(), g_Effect.Textures().size(), ok ? 1 : 0);
 
         g_Effect.ReleaseTextures();
