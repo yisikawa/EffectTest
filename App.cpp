@@ -11,6 +11,7 @@
 #include <objbase.h>
 #include <cstdio>
 #include <cstdint>
+#include <cstdlib>
 #include <cmath>
 #include <string>
 #include <vector>
@@ -1030,6 +1031,10 @@ static int RunSelfTest(const char* path)
 //----------------------------------------------------------------------
 int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
 {
+    // VM の乱数（op 0x0A/0x10/0x11）を固定し、--shot / --selftest の
+    // 画素数・位置を実行ごとに再現できるようにする（検証のゴールデン用）
+    srand(1);
+
     // 自己テストモード（GPU / ウィンドウ不要）
     if (lpCmdLine != nullptr && strncmp(lpCmdLine, "--selftest", 10) == 0)
     {
