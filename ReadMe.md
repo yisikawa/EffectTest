@@ -360,6 +360,7 @@ AltanaView の `SetRenderState` を静的に走査すると、エフェクト描
 - フレーム選択: `--shot --uvframe time|random "<dat>" out.png`（既定 `time`＝経過時間で進める／ゴールデン維持。`random`＝AltanaView 準拠で毎描画ごとに乱数。`11\17` 7,698 / `11\18` 2,411）
 - モデル従属: `--shot --attached on|off`（`--model`/`--bone`/`--bone-map` 指定時は自動 on）
   `on` では AltanaView の `ctx+0x1a0 != 0` 相当として **VM#1 の op を実行しない**（位置は骨で決まる）
+- 骨の自動配分: `--shot --bone-map auto`（体軸 Y が 0.05〜1.75 m の骨を等分に割り当てる。`11\18` 180 フレームで 8,513 / 748）
 - UV クロップ: `--shot --uvcrop on|off "<dat>" out.png`
   （`0x21` を持たないジェネレータの UV をテクスチャの不透明領域にする。既定 `off`）
 - ブレンド自動: `--shot --blend auto "<dat>" out.png`（テクスチャの黒割合 > 0.5 で `add`、他は `alpha`）

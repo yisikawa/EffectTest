@@ -15,6 +15,7 @@
 #include <cmath>
 #include <string>
 #include <vector>
+#include <algorithm>
 
 #include "Dat.h"
 #include "Effect.h"
@@ -1643,6 +1644,38 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
             g_InstHasBone.assign(n, 0);
 
             const char* s = boneMap;
+            if (_stricmp(boneMap, "auto") == 0)
+            {
+                // 体軸（Y）に沿って均等に骨を割り当てる（根拠: 参照動画は体の各所に炎が付く）
+                //   0.05〜1.75 m の範囲に入る骨を Y で並べ、インスタンス数で等分する
+                const int bones = skel.BoneCount();
+                std::vector<int> cand;
+                for (int b = 0; b < bones; ++b)
+                {
+                    const float* w = skel.World(b);
+                    if (w == nullptr) continue;
+                    const float y = w[13];
+                    if (y >= 0.05f && y <= 1.75f) cand.push_back(b);
+                }
+                if (!cand.empty())
+                {
+                    std::sort(cand.begin(), cand.end(), [&](int a, int b) {
+                        const float* wa = skel.World(a);
+                        const float* wb = skel.World(b);
+                        return (wa != nullptr && wb != nullptr) ? (wa[13] < wb[13]) : (a < b);
+                    });
+                    for (size_t i = 0; i < n && i < (size_t)100; ++i)
+                    {
+                        const int pick = cand[(i * cand.size()) / (n > 0 ? n : 1) % cand.size()];
+                        const float* w = skel.World(pick);
+                        if (w == nullptr) continue;
+                        memcpy(&g_InstMats[i * 16], w, 16 * sizeof(float));
+                        g_InstHasBone[i] = 1;
+                    }
+                    Log("[shot] bone-map=auto bones=%d cand=%zu", bones, cand.size());
+                }
+            }
+            else
             while (*s != '\0')
             {
                 const int idx = atoi(s);
