@@ -116,4 +116,5 @@
 | 1 | GPU 不在で T-09 が実施不能 | T2 の `inst`/`tex` 数で代替し、T3 は「未実施」と明記 |
 | 2 | ROM 未インストール | `--list` は exit 2。T1/T2 は DAT パス直指定で実施可 |
 | 3 | ログの追記で誤判定 | 判定前に `Remove-Item effecttest_log.txt` |
+| 5 | 出力ファイルの読み取り競合（実測） | `--selftest` 直後の読み取りは前回内容を返すことがある。`Start-Sleep -Milliseconds 300` を挟み、`file` 行で対象 DAT を確認する |
 | 4 | base テクスチャ未実装（Phase 2） | `tex=-1` を正常として扱う（設計 §4.8.3 の注記） |

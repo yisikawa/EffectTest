@@ -35,6 +35,9 @@ $ROM = 'C:\Program Files (x86)\PlayOnline\SquareEnix\FINAL FANTASY XI\ROM'
 
 ## 4. 検証手順
 
+> 各コマンドで `EffectTest.exe` を実行した直後に `Start-Sleep -Milliseconds 300` を挟むこと（出力ファイルの読み取り競合。§8）。
+> 判定前に `file      = ...` 行で**対象 DAT が一致**していることも確認する。
+
 ### V-01 `prog` が `0x50`（`11\17` / `11\18` / `11\22`）
 
 ```powershell
@@ -185,6 +188,7 @@ Expected: `groups=29`、NPC ROM1 = `items=1266`
 ## 8. 制約・再現性
 
 - `--shot` のみ GPU 依存。GPU 不在環境では V-08 を未実施とし、V-02/V-04 で代替する
+- **実行直後のファイル読み取りは競合する**（実測: `--selftest` の直後に `Select-String` すると**前回の内容**が返ることがある）。各実行の後に `Start-Sleep -Milliseconds 300` を挟むか、`file` 行で対象 DAT を確認してから判定する
 - `effecttest_log.txt` は**追記**のため、各判定前に削除する（前回行の混入を防ぐ）
 - 60 fps 前提。モニタが 60 Hz でない場合、コマ基準の UI 待ち（7 コマ）は時間換算が変わるが、本検証のゴールデンは**命令数・尺・tex**であり影響しない
 - base テクスチャ（`hit6`/`hi17`）は Phase 2 のため、`tex=-1` を正常として扱う（設計 §4.8.3）
