@@ -153,6 +153,16 @@ static bool ParseGeometry(const DatFile& dat, const char* name4, GeneratorBlock&
     }
 
     const float ex = x1 - x0, ey = y1 - y0, ez = z1 - z0;
+
+    // 妥当性ガード: 極端な値を弾く（未解析領域を頂点として読んだ場合の破綻防止）
+    const bool sane = (ex >= 0.01f && ex <= 20.0f) &&
+                      (ey >= -1.0f && ey <= 20.0f) &&
+                      (ez >= -1.0f && ez <= 20.0f) &&
+                      (x0 > -100.0f && x1 < 100.0f) &&
+                      (y0 > -100.0f && y1 < 100.0f) &&
+                      (z0 > -100.0f && z1 < 100.0f);
+    if (!sane) return false;
+
     g.hasGeo = true;
 
     // Y がほぼ 0 で XZ に広がる場合は地面平面（デカール）として扱う
