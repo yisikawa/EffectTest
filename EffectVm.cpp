@@ -153,14 +153,18 @@ static void Vm1(const MotionInstance& mi, SubUnit& su, const EffectContext& ctx)
             break;
         }
 
-        //--- 反転トレイル（位置 = -位置 × 係数）------------------------
+        //--- 反転トレイル（実測 FUN_0040e650 op 0x67 / L11767-11778）
+        //   pos = -dest * dur * 60      （dest = 出力スロット、dur = ctx+0x1c8、C50 = 60）
         case 0x67:
         {
-            float* t = su.sub.Pos();
-            const float k = su.sub.At(SUB_SCALE)[0];
-            t[0] = -t[0] * k;
-            t[1] = -t[1] * k;
-            t[2] = -t[2] * k;
+            if (d)
+            {
+                const float k = ctx.Duration() * 60.0f;
+                float* t = su.sub.Pos();
+                t[0] = -d[0] * k;
+                t[1] = -d[1] * k;
+                t[2] = -d[2] * k;
+            }
             break;
         }
 
