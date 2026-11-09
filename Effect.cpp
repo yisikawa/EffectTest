@@ -319,33 +319,50 @@ void MotionInstance::Reset(const DatFile* d, const GeneratorBlock* g, float star
 
     // 粒子数 = ジェネレータの +0x78 + 1（AltanaView の MotionObject.count と同じ）
     const int n = (g != nullptr) ? (int)g->count + 1 : 1;
-    subs.assign((size_t)((n > 0) ? n : 1), SubUnit{});
+    subs.clear();
 
-    for (SubUnit& su : subs)
+    // 連続放出のパラメータ（寿命は Vm2 が ctx.Duration() から決める）
+    emitTotal    = (n > 0) ? n : 1;
+    emitSpawned  = 0;
+    emitInterval = 0.0f;      // 最初の Eval で寿命から計算する
+    emitTimer    = 0.0f;
+
+    // 従来モード（--emit off）は t=0 で全部そろえる（旧挙動の再現用）
+    if (!EffectEmitMode())
     {
-        // 0x21 のフレーム矩形（先頭フレームで初期化。実際の適用は Eval が
-        // EffectContext::UseTexFrames() を見て決める）
-        su.frameIdx = 0;
-        su.uv[0] = 0.0f; su.uv[1] = 0.0f; su.uv[2] = 1.0f; su.uv[3] = 1.0f;
-
-        su.sub.Clear();
-        su.sub.Elapsed() = 0.0f;
-        su.sub.T01()     = 0.0f;
-        float* prev = su.sub.At(SUB_PREV);
-        prev[0] = prev[1] = prev[2] = 0.0f;
-
-        // 0x1F（ジオメトリ）: bbox を寸法・UV として使う（--geo on のときのみ）
-        if (applyGeo && g != nullptr && g->hasGeo)
-        {
-            su.quadHalf[0]   = g->geoHalf[0];
-            su.quadHalf[1]   = g->geoHalf[1];
-            su.quadCenter[0] = g->geoCenter[0];
-            su.quadCenter[1] = g->geoCenter[1];
-            su.uv[0] = g->geoUV[0]; su.uv[1] = g->geoUV[1];
-            su.uv[2] = g->geoUV[2]; su.uv[3] = g->geoUV[3];
-        }
+        subs.assign((size_t)emitTotal, SubUnit{});
+        for (SubUnit& su : subs) InitSub(su, applyGeo);
+        emitSpawned = emitTotal;
     }
 }
+
+// 1 個ぶんのサブ状態を初期化する（Reset のループ内容を関数化）
+void MotionInstance::InitSub(SubUnit& su, bool applyGeo)
+{
+    su.frameIdx = 0;
+    su.uv[0] = 0.0f; su.uv[1] = 0.0f; su.uv[2] = 1.0f; su.uv[3] = 1.0f;
+
+    su.sub.Clear();
+    su.sub.Elapsed() = 0.0f;
+    su.sub.T01()     = 0.0f;
+    float* prev = su.sub.At(SUB_PREV);
+    prev[0] = prev[1] = prev[2] = 0.0f;
+
+    // 0x1F（ジオメトリ）: bbox を寸法・UV として使う（--geo on のときのみ）
+    if (applyGeo && gen != nullptr && gen->hasGeo)
+    {
+        su.quadHalf[0]   = gen->geoHalf[0];
+        su.quadHalf[1]   = gen->geoHalf[1];
+        su.quadCenter[0] = gen->geoCenter[0];
+        su.quadCenter[1] = gen->geoCenter[1];
+        su.uv[0] = gen->geoUV[0]; su.uv[1] = gen->geoUV[1];
+        su.uv[2] = gen->geoUV[2]; su.uv[3] = gen->geoUV[3];
+    }
+}
+
+// 粒子を 1 個生成する（AltanaView: 放出時に FUN_0040e650 = VM#1 を 1 回だけ実行）
+// 寿命到達時の再初期化（AltanaView FUN_00410090 の移植）
+//   ※ 実装は EffectVm.cpp（Vm1 / Rand01 を使うため）
 
 //======================================================================
 //  EffectContext : 構築

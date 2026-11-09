@@ -19,7 +19,14 @@ namespace
     // 0..255 の乱数（AltanaView FUN_0044c55c。色バイトやジッタ量に使われる）
     inline int RandByte() { return (int)(Rand01() * 256.0f) & 0xFF; }
     inline uint32_t InstLen(const uint8_t* p) { return (uint32_t)(p[1] & 0x1F); }
+
+    bool g_EmitMode = true;
+    int  g_EmitRate = 24;          // 既定の放出レート（個/秒）。--emitrate で変更
 }
+
+void EffectSetEmitMode(bool on) { g_EmitMode = on; }
+bool EffectEmitMode() { return g_EmitMode; }
+void EffectSetEmitRate(int n) { g_EmitRate = (n > 0) ? n : 1; }
 
 //======================================================================
 //  VM#1 : 目標値評価（FUN_0040e650）
@@ -324,6 +331,44 @@ static bool Vm2(const MotionInstance& mi, SubUnit& su, float dt, float rootDurat
 }
 
 //======================================================================
+//  MotionInstance::SpawnSub / RespawnSub
+//----------------------------------------------------------------------
+//  AltanaView の粒子生成（FUN_0040e0b0 の放出部）と再初期化（FUN_00410090）
+//    - 生成時: VM#1（FUN_0040e650）を 1 回だけ実行して初期状態を作る
+//    - 寿命時: elapsed/T01 を 0 に戻し、Move に乱数位相・UV に乱数オフセットを
+//              加え（符号はマイナス）、端数時間だけ進める
+//======================================================================
+void MotionInstance::SpawnSub(const EffectContext& ctx, bool applyGeo)
+{
+    subs.push_back(SubUnit{});
+    InitSub(subs.back(), applyGeo);
+    Vm1(*this, subs.back(), ctx);
+    ++emitSpawned;
+}
+
+void MotionInstance::RespawnSub(float carryDt)
+{
+    if (subs.empty()) return;
+    SubUnit& su = subs.back();
+
+    su.sub.Elapsed() = 0.0f;
+    su.sub.T01()     = 0.0f;
+
+    const float kTwoPi = 6.28318530717959f;
+    float* mv = su.sub.Move();
+    mv[0] -= Rand01() * kTwoPi;
+    mv[1] -= Rand01() * kTwoPi;
+    mv[2] -= Rand01() * kTwoPi;
+
+    float* uv0 = su.sub.At(0xB4);      // op 0x27 の u オフセット
+    float* uv1 = su.sub.At(0xB8);      // op 0x28 の v オフセット
+    uv0[0] -= Rand01();
+    uv1[0] -= Rand01();
+
+    su.sub.Elapsed() = (carryDt > 0.0f && carryDt < 1.0f) ? carryDt : 0.0f;
+}
+
+//======================================================================
 //  MotionInstance::Eval
 //======================================================================
 void MotionInstance::Eval(const EffectContext& ctx, float dt)
@@ -332,11 +377,64 @@ void MotionInstance::Eval(const EffectContext& ctx, float dt)
 
     bool ended = false;
 
-    // AltanaView と同じく、**サブ（粒子）ごと**に VM#1 → VM#2 を回す
-    for (SubUnit& su : subs)
+    const bool emitMode = ctx.Emit();
+
+    //--------------------------------------------------------------
+    // 連続放出（AltanaView FUN_0040e0b0）
+    //   寿命のあいだに emitTotal 個を等間隔で 1 個ずつ生成する
+    //--------------------------------------------------------------
+    if (emitMode)
     {
-        Vm1(*this, su, ctx);
-        if (Vm2(*this, su, dt, ctx.Duration(), ctx)) ended = true;
+        const float dur = (ctx.Duration() > 0.0f) ? ctx.Duration()
+                        : ((gen->Length() > 0.0f) ? gen->Length() : (1.0f / 60.0f));
+        if (emitInterval <= 0.0f)
+        {
+            // データの +0x78 は 0 のことが多い（実測: 11\18 の全 generator）ため、
+            // 粒子数が 1 のときはレート（既定 24 個/秒）で放出する。
+            //   → 寿命のあいだ粒子が積み上がり、参照のような「柱」になる
+            const float rate = (emitTotal > 1) ? ((float)emitTotal / dur) : (float)g_EmitRate;
+            emitInterval = 1.0f / ((rate > 0.0f) ? rate : 1.0f);
+            if (emitInterval <= 0.0f) emitInterval = 1.0f / 60.0f;
+        }
+
+        {
+            emitTimer -= dt;
+            int guard = 0;
+            while (emitTimer <= 0.0f &&
+                   (float)emitSpawned * emitInterval < dur &&
+                   subs.size() < 512u && guard++ < 256)
+            {
+                SpawnSub(ctx, ctx.Geo());
+                emitTimer += emitInterval;
+            }
+        }
+    }
+
+    // AltanaView と同じく、**サブ（粒子）ごと**に評価する
+    for (size_t k = 0; k < subs.size(); )
+    {
+        SubUnit& su = subs[k];
+
+        // 従来モードは VM#1 を毎フレーム回す（旧挙動の再現）。
+        // 放出モードでは生成時に 1 回だけ回している。
+        if (!emitMode) Vm1(*this, su, ctx);
+
+        if (Vm2(*this, su, dt, ctx.Duration(), ctx))
+        {
+            ended = true;
+            if (emitMode)
+            {
+                if (ctx.LoopRespawn())
+                {
+                    RespawnSub(dt);              // ループ: 再初期化して使い回す
+                }
+                else
+                {
+                    subs.erase(subs.begin() + (ptrdiff_t)k);
+                    continue;                    // 寿命: 削除
+                }
+            }
+        }
 
         //----------------------------------------------------------
         // 0x21 のフレーム（テクスチャアトラス）
@@ -366,11 +464,13 @@ void MotionInstance::Eval(const EffectContext& ctx, float dt)
             su.quadCenter[0] = (f.x1 + f.x0) * 0.5f;
             su.quadCenter[1] = (f.y1 + f.y0) * 0.5f;
         }
+
+        ++k;
     }
 
-    // 寿命: 総継続時間に達したら、ループフラグがあればサブを再初期化し、
-    //       無ければインスタンスを終了する（AltanaView FUN_0040e0b0 / FUN_00410090）
-    if (ended)
+    // 寿命: 従来モード（--emit off）はインスタンス単位で再初期化／終了する。
+    //       放出モードでは粒子ごとに Eval 内で処理済み（FUN_0040e0b0 と同じ）。
+    if (ended && !emitMode)
     {
         if (ctx.LoopRespawn())
         {

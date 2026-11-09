@@ -176,12 +176,31 @@ struct MotionInstance
     int                   spawnOp   = 2;
     float                 blackRatio = 0.0f;     // テクスチャの黒割合（加算合成の自動判定用）
 
+    //--- 連続放出（AltanaView FUN_0040e0b0 / FUN_00410090 の移植）---------
+    //   AltanaView は寿命 ctx+0x1c8 の粒子を「間隔ごとに 1 個ずつ」生成し、
+    //   寿命が来たら再初期化（ループ）または削除する。当方も同じ形にする。
+    int   emitTotal    = 0;        // 総放出数（= gen->count + 1）
+    int   emitSpawned  = 0;        // 放出済み数
+    float emitTimer    = 0.0f;     // 次の放出までの残り時間
+    float emitInterval = 0.0f;     // 放出間隔（= 寿命 / 総放出数）
+
     int SubCount() const { return (int)subs.size(); }
     SubObject& Sub0() { return subs[0].sub; }
 
     void Reset(const DatFile* d, const GeneratorBlock* g, float start, int tex, int op, bool applyGeo = false);
     void Eval(const class EffectContext& ctx, float dt);
+
+    void InitSub(SubUnit& su, bool applyGeo);
+    // 粒子を 1 個生成し、VM#1（＝生成時初期化）を 1 回だけ実行する（EffectVm.cpp）
+    void SpawnSub(const class EffectContext& ctx, bool applyGeo);
+    // 寿命到達時の再初期化（AltanaView FUN_00410090, EffectVm.cpp）
+    void RespawnSub(float carryDt);
 };
+
+// 連続放出モデル（--emit）の切替。Reset が参照するためグローバルに置く
+void EffectSetEmitMode(bool on);
+bool EffectEmitMode();
+void EffectSetEmitRate(int n);
 
 //----------------------------------------------------------------------
 // エフェクトコンテキスト（AltanaView の EffectRoot 相当）
@@ -231,6 +250,8 @@ public:
     // 0x1F（ジオメトリ）の bbox/UV をインスタンスに適用する（--geo on。既定 off）
     void SetGeo(bool on) { m_Geo = on; }
     bool Geo() const { return m_Geo; }
+    void SetEmit(bool on) { m_Emit = on; }
+    bool Emit() const { return m_Emit; }
 
     // 粒子寿命をデータ（op 0x01 の LifeTime）から取る（--life on）
     void SetLifeFromData(bool on) { m_LifeData = on; }
@@ -304,6 +325,7 @@ private:
     bool     m_UvCrop       = false;    // 0x21 無しの UV をテクスチャの不透明領域に（--uvcrop on）
     bool     m_Attached     = false;    // モデル従属（ctx+0x1a0 != 0 相当。VM#1 を実行しない）
     bool     m_Geo          = false;    // 0x1F の bbox/UV を適用（--geo on）
+    bool     m_Emit         = true;     // 連続放出モデル（--emit on/off）
     bool     m_LifeData     = false;    // 粒子寿命をデータから（--life on）
     bool     m_QuadSize     = false;    // 0x21 クワッド寸法で描く（--size quad）
 

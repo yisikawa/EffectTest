@@ -44,9 +44,10 @@ namespace
 
     bool  g_Paused    = false;
     bool  g_Layout    = false;    // 位置 0 のインスタンスを横並びにする（確認用・既定 off）
-                              //   ※ 既定 on だと、まだ位置を計算できていないインスタンスが
-                              //     横 1.6 m 間隔で並び「横長の帯」になる（実測: 11\18 の
-                              //     fire が aspect 2.3 の横帯。参照は 0.40 の縦柱）
+                                  //   ※ 既定 on だと、まだ位置を計算できていないインスタンスが
+                                  //     横 1.6 m 間隔で並び「横長の帯」になる（実測: 11\18 の
+                                  //     fire が aspect 2.3 の横帯。参照は 0.40 の縦柱）
+    bool  g_ZUp       = false;    // 粒子位置を Z-up → Y-up 変換する（--zup on）
     bool  g_Trace     = false;
     bool  g_NoTexture = false;    // W: テクスチャを使わず白で描く（デバッグ）
     bool  g_ShowAxes  = false;    // X: 座標軸の表示（既定 OFF。起動時は何も描かない）
@@ -471,6 +472,17 @@ static void RenderScene(bool present)
             // 位置が未設定のエフェクトでも形を確認できるよう横並びに配置
             if (g_Layout && center[0] == 0.0f && center[1] == 0.0f && center[2] == 0.0f)
                 center[0] = (i - (count - 1) * 0.5f) * 1.6f;
+
+            // Z-up → Y-up 変換（--zup on）
+            //   データの粒子は Z 方向へ動く（実測: g000 が f30→f120 で
+            //   pos=(0.08,-0.12,-2.00) → (0.44,-0.66,-11.00)）。
+            //   参照動画の炎は Y（上）方向へ伸びるため、軸の入れ替えを試せるようにする。
+            if (g_ZUp)
+            {
+                const float ty = center[1];
+                center[1] = center[2];
+                center[2] = -ty;
+            }
 
             const float sx  = (s[0] > 0.001f) ? s[0] : 1.0f;
             const float sy2 = (s[1] > 0.001f) ? s[1] : 1.0f;
@@ -1609,6 +1621,34 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
                 if      (_stricmp(mode, "on")  == 0) g_Effect.SetGeo(true);
                 else if (_stricmp(mode, "off") == 0) g_Effect.SetGeo(false);
                 else { Log("[shot] unknown geo: %s", mode); return 2; }
+                continue;
+            }
+
+            if (_stricmp(tok, "--emit") == 0)
+            {
+                char mode[MAX_PATH] = {};
+                if (!NextToken(p, mode, MAX_PATH)) return 2;
+                if      (_stricmp(mode, "on")  == 0) { EffectSetEmitMode(true);  g_Effect.SetEmit(true);  }
+                else if (_stricmp(mode, "off") == 0) { EffectSetEmitMode(false); g_Effect.SetEmit(false); }
+                else { Log("[shot] unknown emit: %s", mode); return 2; }
+                continue;
+            }
+
+            if (_stricmp(tok, "--zup") == 0)
+            {
+                char mode[MAX_PATH] = {};
+                if (!NextToken(p, mode, MAX_PATH)) return 2;
+                if      (_stricmp(mode, "on")  == 0) g_ZUp = true;
+                else if (_stricmp(mode, "off") == 0) g_ZUp = false;
+                else { Log("[shot] unknown zup: %s", mode); return 2; }
+                continue;
+            }
+
+            if (_stricmp(tok, "--emitrate") == 0)
+            {
+                char num[MAX_PATH] = {};
+                if (!NextToken(p, num, MAX_PATH)) return 2;
+                EffectSetEmitRate(atoi(num));
                 continue;
             }
 
