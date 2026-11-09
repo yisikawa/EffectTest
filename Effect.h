@@ -117,6 +117,7 @@ struct GeneratorBlock
     // データ2 の op 0x01（48 B）: bil（0=平面 / 1=ビルボード）、+0x0C に 4 文字名
     int      bil = 1;           // 既定はビルボード
     int      partId = -1;       // op 0x01 の +0x06（アタッチ部位 ID。0x001/0x081 …）
+    int      lifeFrames = 0;    // op 0x01 の +0x22（LifeTime。60 で 1 秒）
     bool     hasPartOfs = false;                  // op 0x01 の位置オフセットが有効か
     char     partName[5] = {};  // op 0x01 の +0x0C（テクスチャ名 4 文字）
     float    partOfs[3] = { 0.0f, 0.0f, 0.0f };   // op 0x01 の +0x10/+0x14/+0x18
@@ -219,6 +220,10 @@ public:
     void SetGeo(bool on) { m_Geo = on; }
     bool Geo() const { return m_Geo; }
 
+    // 粒子寿命をデータ（op 0x01 の LifeTime）から取る（--life on）
+    void SetLifeFromData(bool on) { m_LifeData = on; }
+    bool LifeFromData() const { return m_LifeData; }
+
     // ビルボード寸法に 0x21 クワッドの範囲を使う（--size quad）
     void SetQuadSize(bool on) { m_QuadSize = on; }
     bool QuadSize() const { return m_QuadSize; }
@@ -285,6 +290,7 @@ private:
     bool     m_UvCrop       = false;    // 0x21 無しの UV をテクスチャの不透明領域に（--uvcrop on）
     bool     m_Attached     = false;    // モデル従属（ctx+0x1a0 != 0 相当。VM#1 を実行しない）
     bool     m_Geo          = false;    // 0x1F の bbox/UV を適用（--geo on）
+    bool     m_LifeData     = false;    // 粒子寿命をデータから（--life on）
     bool     m_QuadSize     = false;    // 0x21 クワッド寸法で描く（--size quad）
 
     TimTexture m_WhiteTex;

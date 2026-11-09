@@ -1527,6 +1527,16 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
                 continue;
             }
 
+            if (_stricmp(tok, "--life") == 0)
+            {
+                char mode[MAX_PATH] = {};
+                if (!NextToken(p, mode, MAX_PATH)) return 2;
+                if      (_stricmp(mode, "on")  == 0) g_Effect.SetLifeFromData(true);
+                else if (_stricmp(mode, "off") == 0) g_Effect.SetLifeFromData(false);
+                else { Log("[shot] unknown life: %s", mode); return 2; }
+                continue;
+            }
+
             if (_stricmp(tok, "--geo") == 0)
             {
                 char mode[MAX_PATH] = {};

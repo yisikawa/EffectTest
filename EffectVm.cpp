@@ -174,9 +174,13 @@ static void Vm1(const MotionInstance& mi, SubUnit& su, const EffectContext& ctx)
 //  dur は「ルート（エフェクト全体）の継続時間」= EffectRoot+0x1c8。
 //  ジェネレータ個別の長さ（+0x76）ではない点に注意。
 //======================================================================
-static bool Vm2(const MotionInstance& mi, SubUnit& su, float dt, float rootDuration)
+static bool Vm2(const MotionInstance& mi, SubUnit& su, float dt, float rootDuration,
+                const EffectContext& ctx)
 {
     float dur = rootDuration;
+    // --life on: ジェネレータの LifeTime（op 0x01 の +0x22、60 = 1 秒）を寿命に使う
+    if (mi.gen != nullptr && mi.gen->lifeFrames > 0 && ctx.LifeFromData())
+        dur = (float)mi.gen->lifeFrames / 60.0f;
     if (dur <= 0.0f) dur = (mi.gen->Length() > 0.0f) ? mi.gen->Length() : (1.0f / 60.0f);
 
     //--------------------------------------------------------------
@@ -296,7 +300,7 @@ void MotionInstance::Eval(const EffectContext& ctx, float dt)
     for (SubUnit& su : subs)
     {
         Vm1(*this, su, ctx);
-        if (Vm2(*this, su, dt, ctx.Duration())) ended = true;
+        if (Vm2(*this, su, dt, ctx.Duration(), ctx)) ended = true;
 
         //----------------------------------------------------------
         // 0x21 のフレーム（テクスチャアトラス）

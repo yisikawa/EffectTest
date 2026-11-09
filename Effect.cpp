@@ -373,6 +373,11 @@ bool EffectContext::BuildInternal(const DatFile& dat, const char* mainChunkName)
                 memcpy(&g.partOfs[0], q + 0x10, 4);
                 memcpy(&g.partOfs[1], q + 0x14, 4);
                 memcpy(&g.partOfs[2], q + 0x18, 4);
+                // +0x22 は LifeTime（フレーム数。参考ページ: 60 で 1 秒）
+                uint16_t life = 0;
+                memcpy(&life, q + 0x22, 2);
+                g.lifeFrames = (int)life;
+
                 // 妥当な範囲（±10 m）のみ有効とする
                 g.hasPartOfs = (g.partOfs[0] > -10.0f && g.partOfs[0] < 10.0f &&
                                 g.partOfs[1] > -10.0f && g.partOfs[1] < 10.0f &&

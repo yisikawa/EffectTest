@@ -273,6 +273,26 @@ Select-String -Path effecttest_log.txt -Pattern 'part inst='
   （`--model human --motion idl0` の 90 フレームで **4,446 / 765**、`mapped=11/11`）
 - 無モデル（`--shot <dat>`）のゴールデンは**不変**（3,625 / 3,098 / 6,521 / 3,628）
 
+### V-M20 `--life`（LifeTime をデータから取る）
+
+```powershell
+$ROM='C:\Program Files (x86)\PlayOnline\SquareEnix\FINAL FANTASY XI\ROM'
+.\x64\Release\EffectTest.exe --shot --frames 90 "$ROM\11\17.DAT" lf_off.png            # 既定
+.\x64\Release\EffectTest.exe --shot --frames 90 --life on "$ROM\11\17.DAT" lf_on.png
+```
+期待（実測値・2026-11-09）:
+
+| DAT | `--life off`（既定） | `--life on` |
+|---|---|---|
+| `11\17` | **3,625 / 399** | 1,593 / 244 |
+| `11\18` | **3,098 / 576** | 2,916 / 576 |
+| `11\22` | **6,521 / 247** | 4,808 / 187 |
+| `12\43` | **3,628 / 257** | 2,496 / 158 |
+
+- `op 0x01` の `+0x22`（WORD）を LifeTime（フレーム、60 = 1 秒）として読む
+- 実測値: `11\18 g009`=200、`g006`=90、`g004`=80、`g000`=50、`g005`=60
+- **既定は off**（寿命を短くすると参照より早く消えるため。再出現（`+0x5e`）とセットで要検証）
+
 ## 3. 失敗時の切り分け
 
 ### 3.0 既定サイズモードの変更（2026-11-09）
