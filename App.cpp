@@ -48,6 +48,11 @@ namespace
     bool  g_ShowAxes  = false;    // X: 座標軸の表示（既定 OFF。起動時は何も描かない）
     float g_SizeScale = 1.0f;     // ビルボードの基準半径
 int   g_SizeMode  = 0;        // 0: scale / 1: 0x21 quad / 2: 正方形（scale[2]）
+
+// 骨格をエフェクトのルート変換として使う（--model / --motion / --bone）
+bool      g_RootActive = false;
+float     g_Root[16]   = { 1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1 };
+int       g_RootBone   = 0;
 float g_ClearColor[4] = { 0.05f, 0.06f, 0.09f, 1.0f };   // --bg で変更（参照動画と合わせる用）
     int   g_TexIndex  = 0;
 
@@ -423,8 +428,23 @@ static void RenderScene(bool present)
             halfH = g_SizeScale * su;
         }
 
-        const float axisR[3] = { right[0] * halfW, right[1] * halfW, right[2] * halfW };
-        const float axisU[3] = { up[0] * halfH,    up[1] * halfH,    up[2] * halfH };
+        float axisR[3] = { right[0] * halfW, right[1] * halfW, right[2] * halfW };
+        float axisU[3] = { up[0] * halfH,    up[1] * halfH,    up[2] * halfH };
+
+        // 骨格のルート変換（--model / --motion / --bone）をエフェクト空間に適用
+        if (g_RootActive)
+        {
+            const XMMATRIX M = XMLoadFloat4x4(reinterpret_cast<const XMFLOAT4X4*>(g_Root));
+            XMFLOAT3 tmp = {};
+            XMStoreFloat3(&tmp, XMVector3Transform(XMVectorSet(center[0], center[1], center[2], 1.0f), M));
+            center[0] = tmp.x; center[1] = tmp.y; center[2] = tmp.z;
+
+            XMStoreFloat3(&tmp, XMVector3TransformNormal(XMVectorSet(axisR[0], axisR[1], axisR[2], 0.0f), M));
+            axisR[0] = tmp.x; axisR[1] = tmp.y; axisR[2] = tmp.z;
+
+            XMStoreFloat3(&tmp, XMVector3TransformNormal(XMVectorSet(axisU[0], axisU[1], axisU[2], 0.0f), M));
+            axisU[0] = tmp.x; axisU[1] = tmp.y; axisU[2] = tmp.z;
+        }
 
         float rgba[4] = { c[0], c[1], c[2], c[3] };
         if (rgba[0] == 0.0f && rgba[1] == 0.0f && rgba[2] == 0.0f)
@@ -1264,6 +1284,8 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
         char* p = lpCmdLine + 6;
         char dat[MAX_PATH] = {};
         char png[MAX_PATH] = "effecttest_shot.png";
+        char model[MAX_PATH] = {};                  // --model: 骨格をエフェクトのルートに使う
+        char motion[MAX_PATH] = {};
         int  frames = 90;                       // 既定 90 フレーム（1.5 s）
 
         // --blend alpha_add|add|alpha（検証用。省略時は alpha_add）
@@ -1292,6 +1314,24 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
                 g_ClearColor[1] = ((v >> 8)  & 0xFF) / 255.0f;
                 g_ClearColor[2] = ( v        & 0xFF) / 255.0f;
                 g_ClearColor[3] = 1.0f;
+                continue;
+            }
+
+            if (_stricmp(tok, "--model") == 0)
+            {
+                if (!NextToken(p, model, MAX_PATH)) return 2;
+                continue;
+            }
+            if (_stricmp(tok, "--motion") == 0)
+            {
+                if (!NextToken(p, motion, MAX_PATH)) return 2;
+                continue;
+            }
+            if (_stricmp(tok, "--bone") == 0)
+            {
+                char n[MAX_PATH] = {};
+                if (!NextToken(p, n, MAX_PATH)) return 2;
+                g_RootBone = atoi(n);
                 continue;
             }
 
@@ -1367,7 +1407,48 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
 
         if (!LoadDatFile(dat)) { Log("[shot] load failed: %s", dat); return 3; }
 
-        for (int i = 0; i < frames; ++i) g_Effect.Advance(1.0f / 60.0f);
+        //--------------------------------------------------------------
+        // 骨格をエフェクトのルート変換として使う場合（--model / --motion / --bone）
+        //--------------------------------------------------------------
+        DatFile  mdl;
+        Skeleton skel;
+        bool     haveSkel = false;
+        if (model[0] != '\0')
+        {
+            if (mdl.Load(model) && skel.Load(mdl))
+            {
+                haveSkel = true;
+                if (motion[0] != '\0' && !skel.SetMotion(motion))
+                    Log("[shot] model motion not found: %s", motion);
+                Log("[shot] model=%s bones=%d motions=%zu motion=%s rot=%s bone=%d",
+                    model, skel.BoneCount(), skel.MotionCount(),
+                    (motion[0] != '\0') ? motion : "(rest)", skel.RootModeName(), g_RootBone);
+            }
+            else
+            {
+                Log("[shot] model load failed: %s", model);
+            }
+        }
+
+        for (int i = 0; i < frames; ++i)
+        {
+            g_Effect.Advance(1.0f / 60.0f);
+
+            if (haveSkel)
+            {
+                skel.Update((float)(i + 1) / 60.0f);
+                const float* w = skel.World(g_RootBone);
+                if (w != nullptr)
+                {
+                    memcpy(g_Root, w, sizeof(g_Root));
+                    g_RootActive = true;
+                }
+            }
+        }
+
+        if (g_RootActive)
+            Log("[shot] root bone=%d pos=(%.3f,%.3f,%.3f)",
+                g_RootBone, g_Root[12], g_Root[13], g_Root[14]);
 
         // 描画入力のダンプ（原因切り分け用）
         for (const TimTexture& t : g_Effect.Textures())

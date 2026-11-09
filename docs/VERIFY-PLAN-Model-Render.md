@@ -99,6 +99,20 @@ foreach ($d in '11\17.DAT','11\18.DAT','11\22.DAT','12\43.DAT','162\50.DAT') {
 ```
 期待: 既存の記録と一致（`11\17` 22/3.3333s/8/0、`11\18` 23/4.1667s/11/0、`11\22` 23/4.5167s/14/0、`12\43` 9/2.6667s/0/1、`162\50` 13/8.3333s/0/0）
 
+### V-M09 骨をルートにしたエフェクト（`--model` / `--motion` / `--bone`）
+
+```powershell
+$eff = Join-Path $ROM '11\18.DAT'
+$mdl = Join-Path $ROM '131\6.DAT'
+Start-Process $exe -ArgumentList @('--shot','--model',('"'+$mdl+'"'),'--motion','idl0','--bone','10',('"'+$eff+'"'),'m_b10.png') -Wait
+Select-String -Path effecttest_log.txt -Pattern '^\[shot\] model=|^\[shot\] root'
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\ShotStats.ps1 -Path m_b10.png
+```
+期待（実測値）:
+- `[shot] model=… bones=56 motions=18 motion=idl0 rot=mirrorY bone=10`
+- `[shot] root bone=10 pos=(-0.020,0.016,0.260)`
+- 非背景 **2,167**（`--model` なしは **2,694**、`--bone 0` は 458＝`mirrorY` で Y 反転）
+
 ## 3. 失敗時の切り分け
 
 | 症状 | 疑う箇所 | 確認 |
