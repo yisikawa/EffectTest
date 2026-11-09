@@ -16,6 +16,8 @@ struct TimTexture
     std::string             name;
     uint32_t                width = 0;
     uint32_t                height = 0;
+    float                   uvb[4] = { 0.0f, 0.0f, 1.0f, 1.0f };   // 不透明領域の UV（パレット形式のみ計算）
+    float                   blackRatio = 0.0f;                     // 黒（輝度<8）の割合（加算合成の判定用）
     ID3D11ShaderResourceView* srv = nullptr;
 
     void Release()
@@ -23,6 +25,8 @@ struct TimTexture
         if (srv) { srv->Release(); srv = nullptr; }
         name.clear();
         width = height = 0;
+        uvb[0] = uvb[1] = 0.0f;
+        uvb[2] = uvb[3] = 1.0f;
     }
 };
 

@@ -1,4 +1,4 @@
-#include "Tim.h"
+﻿#include "Tim.h"
 #include <cstring>
 #include <vector>
 
@@ -101,6 +101,46 @@ bool CreateTimTexture(ID3D11Device* device, const uint8_t* chunkBase, uint32_t c
             dst[x] = pal[i];
         }
     }
+
+    //--------------------------------------------------------------
+    // 不透明領域（アルファ > 0）のバウンディングボックスを UV で持つ
+    //   0x21 を持たないジェネレータの UV 決定に使う（--uvcrop）
+    //--------------------------------------------------------------
+    {
+        uint32_t x0 = w, y0 = h, x1 = 0, y1 = 0;
+        bool any = false;
+        for (uint32_t y = 0; y < h; ++y)
+        {
+            const uint32_t* row = buf.data() + (size_t)y * w;
+            for (uint32_t x = 0; x < w; ++x)
+            {
+                if ((row[x] >> 24) == 0) continue;      // A=0 は透明
+                any = true;
+                if (x < x0) x0 = x;
+                if (y < y0) y0 = y;
+                if (x > x1) x1 = x;
+                if (y > y1) y1 = y;
+            }
+        }
+        if (any)
+        {
+            out.uvb[0] = (float)x0 / (float)w;
+            out.uvb[1] = (float)y0 / (float)h;
+            out.uvb[2] = (float)(x1 + 1) / (float)w;
+            out.uvb[3] = (float)(y1 + 1) / (float)h;
+        }
+
+        // 黒（輝度 < 8）の割合: 黒背景のテクスチャは加算合成が前提（黒 = 透明）
+        uint32_t black = 0;
+        for (size_t i = 0; i < buf.size(); ++i)
+        {
+            const uint32_t p = buf[i];
+            const uint32_t r = p & 0xFF, g = (p >> 8) & 0xFF, b = (p >> 16) & 0xFF;
+            if (r + g + b < 96) ++black;   // 暗部（黒〜濃灰）
+        }
+        out.blackRatio = (float)black / (float)buf.size();
+    }
+
     return MakeSrv(device, DXGI_FORMAT_B8G8R8A8_UNORM, w, h, buf.data(), w * 4, out);
 }
 

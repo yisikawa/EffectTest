@@ -358,6 +358,9 @@ AltanaView の `SetRenderState` を静的に走査すると、エフェクト描
 - ヘッドレス: `--shot --blend alpha|add|alpha_add "<dat>" out.png`（`[shot] … blend=<mode>` を出力）
 - テクスチャフレーム: `--shot --uv 0x21|full "<dat>" out.png`（既定 `uvmode=0x21`。`full` で全面サンプリングに戻る）
 - フレーム選択: `--shot --uvframe time|random "<dat>" out.png`（既定 `time`＝経過時間で進める／ゴールデン維持。`random`＝AltanaView 準拠で毎描画ごとに乱数。`11\17` 7,698 / `11\18` 2,411）
+- UV クロップ: `--shot --uvcrop on|off "<dat>" out.png`
+  （`0x21` を持たないジェネレータの UV をテクスチャの不透明領域にする。既定 `off`）
+- ブレンド自動: `--shot --blend auto "<dat>" out.png`（テクスチャの黒割合 > 0.5 で `add`、他は `alpha`）
 - UV スクロール: `--shot --uvscroll off|on|cell "<dat>" out.png`
   （`on` = 累積値を 0..1 巡回、`cell` = 1 セル幅で巡回。既定 `off`＝ゴールデン維持）
 - トレース: `--shot --trace "<dat>" out.png` → `effecttest_trace.csv`（列: `frame,instance,sub,name,elapsed,t01,px,py,pz,sx,sy,sz,r,g,b,a`。**サブ（粒子）単位**）

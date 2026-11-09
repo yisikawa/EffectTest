@@ -500,7 +500,10 @@ void EffectContext::Spawn(const char* name4, float startSec, int op)
 
     // 描画に使う SRV（借用）: ローカル 0x20 → base の 0x20 の順で解決
     if (tex >= 0 && tex < (int)m_Textures.size())
+    {
         mi.srv = m_Textures[tex].srv;
+        mi.blackRatio = m_Textures[tex].blackRatio;
+    }
     else if (m_Base != nullptr && g->linkName[0] != '\0')
         mi.srv = m_Base->FindTexture(g->linkName);
 
@@ -512,6 +515,14 @@ void EffectContext::Spawn(const char* name4, float startSec, int op)
         col[1] = m_LastColor[1] / 255.0f;
         col[2] = m_LastColor[2] / 255.0f;
         col[3] = m_LastColor[3] / 255.0f;
+
+        // 0x21 を持たないジェネレータ: テクスチャの不透明領域を UV にする（--uvcrop on）
+        if (m_UvCrop && !g->HasFrames() && tex >= 0 && tex < (int)m_Textures.size())
+        {
+            const TimTexture& t = m_Textures[tex];
+            su.uv[0] = t.uvb[0]; su.uv[1] = t.uvb[1];
+            su.uv[2] = t.uvb[2]; su.uv[3] = t.uvb[3];
+        }
     }
 
     m_Instances.push_back(mi);

@@ -1,4 +1,4 @@
-//======================================================================
+﻿//======================================================================
 //  App.cpp : EffectTest 本体（Win32 + DX11）
 //
 //  AltanaView の effect motion（タイムライン + 2 段 VM）だけを可視化する。
@@ -48,6 +48,7 @@ namespace
     bool  g_ShowAxes  = false;    // X: 座標軸の表示（既定 OFF。起動時は何も描かない）
     float g_SizeScale = 1.0f;     // ビルボードの基準半径
 bool  g_UvScroll  = false;    // UV オフセット（sub+0xB4/0xB8）。0=off / 1=0..1 巡回 / 2=セル内巡回
+bool  g_BlendAuto = false;    // --blend auto: テクスチャの黒割合で alpha / add を自動選択
 int   g_SizeMode  = 0;        // 0: scale / 1: 0x21 quad / 2: 正方形（scale[2]）
 
 // 骨格をエフェクトのルート変換として使う（--model / --motion / --bone）
@@ -436,7 +437,15 @@ static void RenderScene(bool present)
         ID3D11ShaderResourceView* srv = g_NoTexture ? nullptr : mi.srv;
         if (!g_NoTexture && srv == nullptr) srv = g_Effect.TextureSrv(texIdx);
 
+        // テクスチャが解決できないインスタンスは描かない
+        //   （srv=null で描くと黒クワッドになり、横帯などのアーティファクトになる）
+        if (!g_NoTexture && srv == nullptr) continue;
+
         // 粒子（サブ）ごとに 1 枚描く（AltanaView の DrawPrimitive(…, subs*2) 相当）
+        const GfxBlendMode savedBlend = GfxGetBlendMode();
+        if (g_BlendAuto)
+            GfxSetBlendMode((mi.blackRatio > 0.5f) ? GFX_BLEND_ADD : GFX_BLEND_ALPHA);
+
         for (int k = 0; k < mi.SubCount(); ++k)
         {
             const SubUnit& su = mi.subs[(size_t)k];
@@ -561,6 +570,9 @@ static void RenderScene(bool present)
                         c[0], c[1], c[2], c[3]);
             }
         }
+
+        if (g_BlendAuto && savedBlend != GfxGetBlendMode())
+            GfxSetBlendMode(savedBlend);
     }
 
     if (present) GfxEndFrame();
@@ -1398,7 +1410,8 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
                 if (!NextToken(p, mode, MAX_PATH)) return 2;
                 if      (_stricmp(mode, "alpha_add") == 0) GfxSetBlendMode(GFX_BLEND_ALPHA_ADD);
                 else if (_stricmp(mode, "add")       == 0) GfxSetBlendMode(GFX_BLEND_ADD);
-                else if (_stricmp(mode, "alpha")     == 0) GfxSetBlendMode(GFX_BLEND_ALPHA);
+                else if (_stricmp(mode, "alpha")     == 0) { GfxSetBlendMode(GFX_BLEND_ALPHA); g_BlendAuto = false; }
+                else if (_stricmp(mode, "auto")      == 0) g_BlendAuto = true;
                 else { Log("[shot] unknown blend: %s", mode); return 2; }
                 continue;
             }
@@ -1490,6 +1503,16 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
                 if      (_stricmp(mode, "0x21") == 0) g_Effect.SetUseTexFrames(true);
                 else if (_stricmp(mode, "full") == 0) g_Effect.SetUseTexFrames(false);
                 else { Log("[shot] unknown uv: %s", mode); return 2; }
+                continue;
+            }
+
+            if (_stricmp(tok, "--uvcrop") == 0)
+            {
+                char mode[MAX_PATH] = {};
+                if (!NextToken(p, mode, MAX_PATH)) return 2;
+                if      (_stricmp(mode, "on")  == 0) g_Effect.SetUvCrop(true);
+                else if (_stricmp(mode, "off") == 0) g_Effect.SetUvCrop(false);
+                else { Log("[shot] unknown uvcrop: %s", mode); return 2; }
                 continue;
             }
 
@@ -1636,7 +1659,8 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
 
         // 描画入力のダンプ（原因切り分け用）
         for (const TimTexture& t : g_Effect.Textures())
-            Log("[shot] tex %s %ux%u srv=%p", t.name.c_str(), t.width, t.height, (void*)t.srv);
+            Log("[shot] tex %s %ux%u uvb=(%.3f,%.3f,%.3f,%.3f) black=%.3f srv=%p", t.name.c_str(), t.width, t.height,
+                t.uvb[0], t.uvb[1], t.uvb[2], t.uvb[3], t.blackRatio, (void*)t.srv);
 
         for (const MotionInstance& mi : g_Effect.Instances())
         {

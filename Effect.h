@@ -146,6 +146,7 @@ struct MotionInstance
     int                   texIndex  = -1;
     ID3D11ShaderResourceView* srv   = nullptr;   // 借用（ローカル 0x20 または base の 0x20）
     int                   spawnOp   = 2;
+    float                 blackRatio = 0.0f;     // テクスチャの黒割合（加算合成の自動判定用）
 
     int SubCount() const { return (int)subs.size(); }
     SubObject& Sub0() { return subs[0].sub; }
@@ -190,6 +191,10 @@ public:
 
     // サブ再初期化（リスポーン）フラグ: main のストリーム D に op 0x05 があると立つ
     bool LoopRespawn() const { return m_LoopRespawn; }
+
+    // 0x21 を持たないジェネレータの UV をテクスチャの不透明領域にする（--uvcrop on）
+    void SetUvCrop(bool on) { m_UvCrop = on; }
+    bool UvCrop() const { return m_UvCrop; }
 
     // ビルボード寸法に 0x21 クワッドの範囲を使う（--size quad）
     void SetQuadSize(bool on) { m_QuadSize = on; }
@@ -254,6 +259,7 @@ private:
     bool     m_UseTexFrames = true;     // 0x21 の UV 適用（--uv full で無効化）
     bool     m_RandomFrame  = false;    // 0x21 のフレームを乱数選択（AltanaView 準拠は true。--uvframe random）
     bool     m_LoopRespawn  = false;    // サブ再初期化（main のストリーム D に op 0x05）
+    bool     m_UvCrop       = false;    // 0x21 無しの UV をテクスチャの不透明領域に（--uvcrop on）
     bool     m_QuadSize     = false;    // 0x21 クワッド寸法で描く（--size quad）
 
     TimTexture m_WhiteTex;
