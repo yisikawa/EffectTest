@@ -195,7 +195,7 @@ Expected（`[shot] … blend=<mode>` が指定どおり）:
 | `alpha_add` | `alpha_add` | 約 3,132 | 372 |
 | `alpha`（既定） | `alpha` | 約 4,481 | **348** |
 
-`--blend` を省略したとき `blend=alpha` になること（`11\18` = 4,048、`11\22` = 6,521、`12\43` = 3,504）。UV は既定 `0x21`、色順は既定 `rgb`。
+`--blend` を省略したとき `blend=alpha` になること（`11\18` = 4,048、`11\22` = 6,408、`12\43` = 3,503）。UV は既定 `0x21`、色順は既定 `rgb`。
 
 ### V-14 テクスチャフレーム（T-15 / T-16）
 
@@ -272,7 +272,7 @@ ffmpeg -y -v error -i fire2.mp4 -vf "fps=10,crop=560:700:640:120,signalstats,met
 
 | 手法 | 6.2 s の非背景 | 参照との比較 |
 |---|---|---|
-| `--size scale`（既定） | 3,504（`--bg 40F0F0` で 3,291） | 横長の帯で不一致 |
+| `--size scale`（既定） | 3,503（`--bg 40F0F0` で 3,291） | 横長の帯で不一致 |
 | `--size square`（`scale[2]` を両軸） | 2,136 | 小さすぎる（参照の炎は体を覆う） |
 | `--size square --scale 3` | 13,129 | 大きさは近いが、**赤い円盤が主役**になり参照と不一致 |
 
@@ -323,7 +323,7 @@ ffmpeg -y -v error -i fire2.mp4 -vf "fps=10,crop=560:700:640:120,signalstats,met
 | V-08 | ✅ | `ok=1`、`blend=alpha`、`uvmode=0x21`。非背景 **4,481**（Fire）/ **4,048**（Fire II）。最大 RGB 和 348 / 576（`--uv full` は 8,033 / 2,396） |
 | V-11（Phase 2） | ✅ | `--shot` で `[base] … tex=61 load_ms=4`、`g006 link=hit6 srv≠0` / `g005 link=hi17 srv≠0`（base の `0x20` を借用）。`gs00`(0x3D)・`g003`(0x1F) は `srv=0`（白）で正常 |
 | V-12（入れ子） | ✅ | `12\43`: `subtl = 1`（`main`→`hit1`）、`timeline = 9 insts`、`--shot` で `inst=8 ok=1`・非背景 **13,150**（修正前は main 単体で 0） |
-| V-13（合成） | ✅ | 既定 `blend=alpha`。Fire 非背景 4,481 / maxSum 348（`add`=3,841/668、`alpha_add`=3,132/372）。`12\43` は 3,504 / 257 |
+| V-13（合成） | ✅ | 既定 `blend=alpha`。Fire 非背景 4,481 / maxSum 348（`add`=3,841/668、`alpha_add`=3,132/372）。`12\43` は 3,503 / 257 |
 | V-14（0x21） | ✅ | `frm=` が `g004`/`g001`=16、`g000`/`g002`=1、他 0(none)。テクスチャは specific 名で解決（`fai0`→`fai01`=256×256、`fai1`→`fai02`、`fai2`→`fai03`）。Fire II は `--uv full` 2,396 → 既定 **4,048** |
 | V-15（参照動画） | ✅ | 開始 3.2 s・終了 7.3 s（尺 4.1 s ≈ 250 フレーム）。`fire2noalpha.mp4` から「RGB≒0＋alpha 形状・アルファ合成」を確定（§4.8.6.5） |
 | V-09 | 未実施 | GUI のクリック操作（手動） |

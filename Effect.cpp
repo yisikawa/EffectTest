@@ -84,6 +84,87 @@ static bool ParseTexFrames(const DatFile& dat, const char* name4, std::vector<Te
     return !out.empty();
 }
 
+//======================================================================
+//  0x1F（ジオメトリ）のパース
+//    ヘッダ: +0x14 = 名前数(u8)、+0x16 = 形状数(u16)、+0x18.. = u16 配列
+//    頂点  : 0x36 + i*0x24（36 B、6 頂点で 1 クワッド）
+//            +0x00 float3 位置 / +0x10 D3DCOLOR / +0x14 u / +0x18 v
+//    末尾  : 4 文字名（16 B 間隔）
+//======================================================================
+static bool ParseGeometry(const DatFile& dat, const char* name4, GeneratorBlock& g)
+{
+    if (name4 == nullptr || name4[0] == '\0') return false;
+
+    const DatChunk* c = dat.Find(name4, 0x1F);
+    if (c == nullptr || c->size < 0x40 || !dat.InRange(c->offset, c->size)) return false;
+
+    const uint8_t* p = dat.At(c->offset);
+    if (p == nullptr) return false;
+
+    uint16_t shapes = 0;
+    memcpy(&shapes, p + 0x16, 2);
+    if (shapes == 0 || shapes > 4096) return false;
+
+    const uint32_t start = 0x36;
+    const uint32_t stride = 0x24;
+    // 実測: `fire`(shapes=2, size=0x110) と `f101`(shapes=32, size=0xDB0) は
+    //       「頂点数 = shapes」で 0x36 + shapes*0x24 が収まる（*6 ではない）
+    const uint32_t need = start + (uint32_t)shapes * stride;
+    if (need > c->size) return false;
+
+    float x0 = 1e9f, y0 = 1e9f, x1 = -1e9f, y1 = -1e9f;
+    float u0 = 1e9f, v0 = 1e9f, u1 = -1e9f, v1 = -1e9f;
+
+    for (uint32_t i = 0; i < (uint32_t)shapes; ++i)
+    {
+        const uint8_t* q = p + start + i * stride;
+        float x = 0.0f, y = 0.0f, u = 0.0f, v = 0.0f;
+        memcpy(&x, q + 0x00, 4);
+        memcpy(&y, q + 0x04, 4);
+        memcpy(&u, q + 0x14, 4);
+        memcpy(&v, q + 0x18, 4);
+        if (x < x0) x0 = x;
+        if (y < y0) y0 = y;
+        if (x > x1) x1 = x;
+        if (y > y1) y1 = y;
+        if (u < u0) u0 = u;
+        if (v < v0) v0 = v;
+        if (u > u1) u1 = u;
+        if (v > v1) v1 = v;
+    }
+
+    g.hasGeo      = true;
+    g.geoHalf[0]   = (x1 - x0) * 0.5f;
+    g.geoHalf[1]   = (y1 - y0) * 0.5f;
+    g.geoCenter[0] = (x1 + x0) * 0.5f;
+    g.geoCenter[1] = (y1 + y0) * 0.5f;
+    // UV が退化している場合は全面（0,0,1,1）にフォールバック
+    if (u1 - u0 > 1e-4f && v1 - v0 > 1e-4f)
+    {
+        g.geoUV[0] = u0; g.geoUV[1] = v0; g.geoUV[2] = u1; g.geoUV[3] = v1;
+    }
+    else
+    {
+        g.geoUV[0] = 0.0f; g.geoUV[1] = 0.0f; g.geoUV[2] = 1.0f; g.geoUV[3] = 1.0f;
+    }
+
+    // テクスチャ名（16 B 間隔のリストのうち、0x20 に実在する最初のもの）
+    for (uint32_t off = need; off + 8 <= c->size; off += 16)
+    {
+        char nm[9] = {};
+        memcpy(nm, p + off, 8);
+        nm[8] = '\0';
+        for (int i = 7; i >= 0 && (nm[i] == ' ' || nm[i] == '\0'); --i) nm[i] = '\0';
+        if (nm[0] == '\0') continue;
+        if (dat.Find(nm, 0x20) != nullptr)
+        {
+            strncpy_s(g.geoName, nm, _TRUNCATE);
+            break;
+        }
+    }
+    return true;
+}
+
 void MotionInstance::Reset(const DatFile* d, const GeneratorBlock* g, float start, int tex, int op)
 {
     dat       = d;
@@ -109,6 +190,17 @@ void MotionInstance::Reset(const DatFile* d, const GeneratorBlock* g, float star
         su.sub.T01()     = 0.0f;
         float* prev = su.sub.At(SUB_PREV);
         prev[0] = prev[1] = prev[2] = 0.0f;
+
+        // 0x1F（ジオメトリ）: bbox を寸法・UV として使う（0x21 が無い場合の形状）
+        if (g != nullptr && g->hasGeo)
+        {
+            su.quadHalf[0]   = g->geoHalf[0];
+            su.quadHalf[1]   = g->geoHalf[1];
+            su.quadCenter[0] = g->geoCenter[0];
+            su.quadCenter[1] = g->geoCenter[1];
+            su.uv[0] = g->geoUV[0]; su.uv[1] = g->geoUV[1];
+            su.uv[2] = g->geoUV[2]; su.uv[3] = g->geoUV[3];
+        }
     }
 }
 
@@ -187,6 +279,9 @@ bool EffectContext::BuildInternal(const DatFile& dat, const char* mainChunkName)
 
         // 同名の 0x21（テクスチャフレーム）があれば UV 矩形と specific 名を取り込む
         ParseTexFrames(dat, g.linkName, g.texFrames, g.texName);
+
+        // 同名の 0x1F（ジオメトリ）があれば bbox と UV・テクスチャ名を取り込む
+        ParseGeometry(dat, g.linkName, g);
 
         uint32_t o = 0;
         memcpy(&o, p + 0x80, 4); g.tblA = g.payloadOff + (o - 0x90);
@@ -496,6 +591,7 @@ void EffectContext::Spawn(const char* name4, float startSec, int op)
     int tex = -1;
     if (g->texName[0] != '\0') tex = FindTextureIndexBySpecific(g->texName);
     if (tex < 0) tex = FindTextureIndex(g->linkName);
+    if (tex < 0 && g->geoName[0] != '\0') tex = FindTextureIndexBySpecific(g->geoName);
     mi.Reset(m_Dat, g, startSec, tex, op);
 
     // 描画に使う SRV（借用）: ローカル 0x20 → base の 0x20 の順で解決

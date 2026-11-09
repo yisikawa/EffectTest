@@ -115,6 +115,13 @@ struct GeneratorBlock
     char     texName[9]  = {};  // 同名 0x21 の +0x20（specific 名 8 文字）。テクスチャ解決に使う
     std::vector<TexFrame> texFrames;   // 同名の 0x21 があればそのフレーム列（無ければ空）
 
+    // 0x1F（ジオメトリ）: 36 B 頂点 × 形状数。寸法と UV を bbox で持つ
+    bool     hasGeo     = false;
+    float    geoHalf[2]   = { 0.0f, 0.0f };
+    float    geoCenter[2] = { 0.0f, 0.0f };
+    float    geoUV[4]     = { 0.0f, 0.0f, 1.0f, 1.0f };
+    char     geoName[9]   = {};   // 0x1F が参照するテクスチャ名（8 文字）
+
     inline bool HasFrames() const { return !texFrames.empty(); }
 
     inline float Length() const { return (frames + 1) * (1.0f / 60.0f); }
