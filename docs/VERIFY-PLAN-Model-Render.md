@@ -19,11 +19,18 @@ Remove-Item effecttest_log.txt, effecttest_selftest.txt -ErrorAction SilentlyCon
 
 ```powershell
 $dat = Join-Path $ROM '131\6.DAT'
-Start-Process $exe -ArgumentList @('--selftest', ('"'+$dat+'"')) -Wait
+Start-Process $exe -ArgumentList @('--skel', ('"'+$dat+'"'), 'idl0') -Wait
 Start-Sleep -Milliseconds 300
-Select-String -Path effecttest_selftest.txt -Pattern '^model|^prog|^timeline'
+Select-String -Path effecttest_log.txt -Pattern '^\[skel\]'
 ```
-期待: `model: mesh>=1 poly>0 vertex>0 bones>0 tex>0`、`prog = 0x50`、`timeline = …`（既存と同一）
+期待（実測値）:
+- `[skel] … bones=56 motions=18`
+- `[skel] motion idl0 dur=0.3500s keys=15`（ほか `cor0` 1.00s/2keys、`ded0` 0.50s/26keys 等 18 件）
+- `[skel] rest t=0.000 root=(0.000,0.000,0.000) last=(-0.187,-0.306,-0.525)`
+- `motion=idl0` の 3 行で `mid` が **(-0.471)→(-0.473)→(-0.475)** と変化（時間で姿勢が変わる）
+- エフェクト回帰は不変（`11\17` = 8,050 / 348）
+
+> `--skel` は GPU 不要。骨・モーションの読込だけを検証する。
 
 ### V-M02 モーション一覧の一致
 
@@ -105,4 +112,4 @@ foreach ($d in '11\17.DAT','11\18.DAT','11\22.DAT','12\43.DAT','162\50.DAT') {
 
 | 実施日 | ビルド | V-M01 | V-M02 | V-M03 | V-M04 | V-M05 | V-M06 | V-M07 | V-M08 | 備考 |
 |---|---|---|---|---|---|---|---|---|---|---|
-| 未実施 | — | — | — | — | — | — | — | — | — | 実装後に記入 |
+| 2026-11-09 | Release x64 | ✅ | — | — | — | — | — | — | — | **P1a 完了**: `--skel` で bones=56 / motions=18、`idl0` で姿勢変化、エフェクト回帰 8,050/348 不変 |

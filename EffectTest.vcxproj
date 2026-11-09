@@ -77,7 +77,8 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="App.cpp" />
+    <ClCompile Include="Skeleton.cpp" />
+<ClCompile Include="App.cpp" />
     <ClCompile Include="Dat.cpp" />
     <ClCompile Include="Effect.cpp" />
     <ClCompile Include="EffectBase.cpp" />
@@ -87,7 +88,8 @@
     <ClCompile Include="Tim.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="Dat.h" />
+    <ClInclude Include="Skeleton.h" />
+<ClInclude Include="Dat.h" />
     <ClInclude Include="Effect.h" />
     <ClInclude Include="EffectBase.h" />
     <ClInclude Include="Gfx.h" />

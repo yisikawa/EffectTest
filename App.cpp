@@ -19,6 +19,7 @@
 #include "Dat.h"
 #include "Effect.h"
 #include "EffectBase.h"
+#include "Skeleton.h"
 #include "Gfx.h"
 #include "ListDb.h"
 
@@ -1054,6 +1055,69 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
     // VM の乱数（op 0x0A/0x10/0x11）を固定し、--shot / --selftest の
     // 画素数・位置を実行ごとに再現できるようにする（検証のゴールデン用）
     srand(1);
+
+    //--------------------------------------------------------------
+    // 骨格の確認（GPU 不要）: --skel <dat> [motion4]
+    //--------------------------------------------------------------
+    if (lpCmdLine != nullptr && strncmp(lpCmdLine, "--skel", 6) == 0)
+    {
+        char* p = lpCmdLine + 6;
+        char path[MAX_PATH] = {};
+        char mo[MAX_PATH]   = {};
+        if (!NextToken(p, path, MAX_PATH)) return 2;
+        if (!NextToken(p, mo, MAX_PATH)) mo[0] = '\0';
+
+        DatFile dat;
+        if (!dat.Load(path)) { Log("[skel] load failed: %s", path); return 3; }
+
+        Skeleton sk;
+        if (!sk.Load(dat)) { Log("[skel] no skeleton (0x29): %s", path); return 4; }
+
+        Log("[skel] dat=%s bones=%d motions=%zu", path, sk.BoneCount(), sk.MotionCount());
+        for (size_t i = 0; i < sk.MotionCount(); ++i)
+        {
+            Log("[skel] motion %-4s dur=%.4fs keys=%d",
+                sk.MotionName(i), sk.MotionDuration(i), sk.MotionKeys(i));
+        }
+
+        std::vector<float> org;
+        sk.Update(0.0f);
+        sk.BoneOrigins(org);
+        Log("[skel] rest t=0.000 root=(%.3f,%.3f,%.3f) last=(%.3f,%.3f,%.3f)",
+            org[0], org[1], org[2],
+            org[org.size() - 3], org[org.size() - 2], org[org.size() - 1]);
+        for (int b = 0; b < 8 && b < (int)org.size() / 3; ++b)
+        {
+            Log("[skel] bone %2d origin=(%.3f,%.3f,%.3f)", b,
+                org[b * 3], org[b * 3 + 1], org[b * 3 + 2]);
+        }
+
+        if (mo[0] != '\0')
+        {
+            if (!sk.SetMotion(mo))
+            {
+                Log("[skel] motion not found: %s", mo);
+            }
+            else
+            {
+                const float ts[3] = { 0.0f, 0.5f, 1.0f };
+                for (int i = 0; i < 3; ++i)
+                {
+                    sk.Update(ts[i]);
+                    sk.BoneOrigins(org);
+                    const size_t mid = (org.size() / 6) * 3;   // 中央付近のボーン
+                    Log("[skel] motion=%s t=%.3f root=(%.3f,%.3f,%.3f) mid=(%.3f,%.3f,%.3f) last=(%.3f,%.3f,%.3f)",
+                        mo, ts[i],
+                        org[0], org[1], org[2],
+                        org[mid], org[mid + 1], org[mid + 2],
+                        org[org.size() - 3], org[org.size() - 2], org[org.size() - 1]);
+                }
+            }
+        }
+
+        dat.Unload();
+        return 0;
+    }
 
     // 自己テストモード（GPU / ウィンドウ不要）
     if (lpCmdLine != nullptr && strncmp(lpCmdLine, "--selftest", 10) == 0)
