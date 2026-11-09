@@ -162,6 +162,23 @@ foreach ($m in @('scale','square','quad','meter')) {
 - **単位はメートル**（1.0 = 1 m、骨も同基準）。`0x21` のクワッドは `fire11`=2×4 m、`fire14`≈3.94 m 角
 - generator ヘッダ `+0x40`/`+0x50` は**色**（全 generator で (1,1,1,0)/(1,1,1,1)）。寸法フィールドは無い
 
+### V-M13 ビルボード則（軸を回さない）
+
+```powershell
+$ROM='C:\Program Files (x86)\PlayOnline\SquareEnix\FINAL FANTASY XI\ROM'
+# 既定（回帰）: 2,694 のまま
+.\x64\Release\EffectTest.exe --shot --frames 90 "$ROM\11\18.DAT" reg_after.png
+# 骨 10 をルートに（軸を回さないので面積が増える）
+.\x64\Release\EffectTest.exe --shot --frames 90 --bone 10 --motion idl0 "$ROM\11\18.DAT" bone_after.png
+# 0x21 実寸のみ（VM スケールを掛けない）
+.\x64\Release\EffectTest.exe --shot --size quad --frames 180 --bg 40F0F0 "$ROM\11\18.DAT" bb_quad.png
+```
+期待（実測値・2026-11-09）:
+- 既定 **2,694**（不変）
+- `--bone 10` **2,886**（軸回転をやめた結果。以前は 2,167）
+- `--size quad` は**帯状の黒塊が出ない**（円形の煙）。非背景 8,986 / 暗部 4,388
+- 帯の原因は `scl.x` の破綻（7.60 / 27.47）。`0x21` の実寸（±2 m など）だけを使う
+
 ## 3. 失敗時の切り分け
 
 | 症状 | 疑う箇所 | 確認 |

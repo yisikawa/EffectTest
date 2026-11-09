@@ -366,6 +366,8 @@ AltanaView の `SetRenderState` を静的に走査すると、エフェクト描
 - `--size meter` を追加（**メートル基準**）。`0x21` のクワッド範囲（約 2〜4 m）を使い、無ければ 1 m
   - 実測（`11\18`/180 フレーム）: `quad`=11,158 / `meter`=5,470 / `scale`=9,326 / `square`=4,454
   - **寸法は `quad` が参照と一致**（暗部 10,204 vs 参照 11,301）
+- **ビルボード則**: 面は常にカメラ正対（骨行列は**中心位置にだけ**適用し、軸は回さない）。3D スケールは面内の幅・高さに効く
+  - `--size quad` は `0x21` のメートル実寸のみを使う（VM の壊れた scl を掛けない → 帯状の黒塊が出ない）
 - 背景色: `--shot --bg RRGGBB "<dat>" out.png`（参照動画は `40F0F0`）
 - 色順（診断用）: `--shot --color bgr|rgb "<dat>" out.png`（既定 `rgb`。PNG 保存の色順は修正済み）
 - 参照動画との比較: `ffmpeg -ss <3.2 + N/60> -i fire2.mp4 -frames:v 1 -vf "crop=620:900:640:90" cmp.png`（`docs/VERIFY-PLAN-Schedule.md` V-15）

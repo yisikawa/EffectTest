@@ -438,8 +438,11 @@ static void RenderScene(bool present)
         float halfH = g_SizeScale * sy2;
         if (g_SizeMode == 1 && mi.quadHalf[0] > 0.0f && mi.quadHalf[1] > 0.0f)
         {
-            halfW = g_SizeScale * mi.quadHalf[0] * sx;
-            halfH = g_SizeScale * mi.quadHalf[1] * sy2;
+            // 0x21 のクワッド範囲は既にメートル実寸（例: ±2 → 4 m 角）。
+            // VM のスケール（scl）は現状 X 成分が破綻しているため掛けない。
+            // 倍率を変えたいときは --scale を使う。
+            halfW = g_SizeScale * mi.quadHalf[0];
+            halfH = g_SizeScale * mi.quadHalf[1];
 
             // クワッド中心のオフセット（ローカル xy）
             center[0] += right[0] * mi.quadCenter[0] + up[0] * mi.quadCenter[1];
@@ -488,11 +491,9 @@ static void RenderScene(bool present)
             XMStoreFloat3(&tmp, XMVector3Transform(XMVectorSet(center[0], center[1], center[2], 1.0f), M));
             center[0] = tmp.x; center[1] = tmp.y; center[2] = tmp.z;
 
-            XMStoreFloat3(&tmp, XMVector3TransformNormal(XMVectorSet(axisR[0], axisR[1], axisR[2], 0.0f), M));
-            axisR[0] = tmp.x; axisR[1] = tmp.y; axisR[2] = tmp.z;
-
-            XMStoreFloat3(&tmp, XMVector3TransformNormal(XMVectorSet(axisU[0], axisU[1], axisU[2], 0.0f), M));
-            axisU[0] = tmp.x; axisU[1] = tmp.y; axisU[2] = tmp.z;
+            // ビルボードの軸は回転させない（常にカメラ正対）。
+            // 骨行列は「中心位置」にだけ適用する。軸まで回すと、軸が視線方向に
+            // 倒れたときにクワッドが潰れて帯状になる（実測で発生）。
         }
 
         float rgba[4] = { c[0], c[1], c[2], c[3] };
