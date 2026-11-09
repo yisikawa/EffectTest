@@ -86,15 +86,17 @@ static bool ParseTexFrames(const DatFile& dat, const char* name4, std::vector<Te
 
 //======================================================================
 //  0x1F（ジオメトリ）のパース
-//    ヘッダ: +0x14 = 名前数(u8)、+0x16 = 形状数(u16)、+0x18.. = u16 配列
-//    頂点  : 0x36 + i*0x24（36 B、6 頂点で 1 クワッド）
-//            +0x00 float3 位置 / +0x10 D3DCOLOR / +0x14 u / +0x18 v
-//    末尾  : 4 文字名（16 B 間隔）
+//    ヘッダ: 0x30 B 固定
+//      +0x14 名前数(u8) / +0x16 三角形数(u16) / +0x1E 8 B グループ名
+//      +0x26 8 B 別名 / +0x30 から頂点
+//    頂点  : 0x30 + i*0x24（36 B、6 頂点で 1 クワッド）
+//            +0x00 half3 位置 / +0x1C half u / +0x20 half v
 //======================================================================
+static void ReadGeoName(const uint8_t* p, GeneratorBlock& g);
+
 static bool ParseGeometry(const DatFile& dat, const char* name4, GeneratorBlock& g)
 {
     if (name4 == nullptr || name4[0] == '\0') return false;
-
     const DatChunk* c = dat.Find(name4, 0x1F);
     if (c == nullptr || c->size < 0x40 || !dat.InRange(c->offset, c->size)) return false;
 
@@ -128,125 +130,127 @@ static bool ParseGeometry(const DatFile& dat, const char* name4, GeneratorBlock&
         return s ? -v : v;
     };
 
-    float x0 = 1e9f, y0 = 1e9f, z0 = 1e9f, x1 = -1e9f, y1 = -1e9f, z1 = -1e9f;
-    float u0 = 1e9f, v0 = 1e9f, u1 = -1e9f, v1 = -1e9f;
-
-    for (uint32_t i = 0; i < verts; ++i)
+    // UV は half（実測: `fire` の 4 隅 = (1.871,0)/(1.871,1.871)/(0,0)/(0,1.871)）
+    //   +0x1C = u / +0x20 = v（float32 ではない）
+    struct Vtx { float x, y, z, u, v; };
+    auto ReadVtx = [&](uint32_t idx, Vtx& o)
     {
-        const uint8_t* q = p + start + i * stride;
-        uint16_t hx = 0, hy = 0, hz = 0;
+        const uint8_t* q = p + start + idx * stride;
+        uint16_t hx = 0, hy = 0, hz = 0, hu = 0, hv = 0;
         memcpy(&hx, q + 0x00, 2);
         memcpy(&hy, q + 0x02, 2);
         memcpy(&hz, q + 0x04, 2);
-        const float x = half2f(hx), y = half2f(hy), z = half2f(hz);
+        memcpy(&hu, q + 0x1C, 2);
+        memcpy(&hv, q + 0x20, 2);
+        o.x = half2f(hx); o.y = half2f(hy); o.z = half2f(hz);
+        o.u = half2f(hu); o.v = half2f(hv);
+    };
 
-        float u = 0.0f, v = 0.0f;
-        memcpy(&u, q + 0x1A, 4);
-        memcpy(&v, q + 0x1E, 4);
-
-        if (x < x0) x0 = x;
-        if (y < y0) y0 = y;
-        if (z < z0) z0 = z;
-        if (x > x1) x1 = x;
-        if (y > y1) y1 = y;
-        if (z > z1) z1 = z;
-        if (u < u0) u0 = u;
-        if (v < v0) v0 = v;
-        if (u > u1) u1 = u;
-        if (v > v1) v1 = v;
-    }
-
-    const float ex = x1 - x0, ey = y1 - y0, ez = z1 - z0;
-
-    // 6 頂点（2 三角形）ごとのサブクワッドを作る（実頂点に近い形状）
-    //   クワッド単位で妥当性を判定し、異常なものだけ捨てる（チャンク全体は捨てない）
+    // 6 頂点（2 三角形）ごとに 1 枚の平行四辺形を作る
+    //   A=v0, B=v1, C=v2 の 3 頂点から平面を作る（A' = B + C - A）
+    //   妥当性は「辺の長さ」で判定し、異常なクワッドだけ捨てる
     g.geoQuads.clear();
     for (uint32_t s = 0; s + 6u <= verts; s += 6u)
     {
-        float qx0 = 1e9f, qy0 = 1e9f, qx1 = -1e9f, qy1 = -1e9f;
-        float qu0 = 1e9f, qv0 = 1e9f, qu1 = -1e9f, qv1 = -1e9f;
-        bool  bad = false;
-        for (uint32_t v = s; v < s + 6u; ++v)
+        Vtx A, B, C, D, E, F;
+        ReadVtx(s + 0, A);
+        ReadVtx(s + 1, B);
+        ReadVtx(s + 2, C);
+        ReadVtx(s + 3, D);
+        ReadVtx(s + 4, E);
+        ReadVtx(s + 5, F);
+
+        auto ok = [](const Vtx& t)
         {
-            const uint8_t* q = p + start + v * stride;
-            uint16_t hx = 0, hy = 0, hz = 0;
-            memcpy(&hx, q + 0x00, 2);
-            memcpy(&hy, q + 0x02, 2);
-            memcpy(&hz, q + 0x04, 2);
-            const float vx = half2f(hx), vy = half2f(hy), vz = half2f(hz);
-            // 平面（XZ）なら X/Z を、それ以外は X/Y を使う
-            const float ax = vx;
-            const float ay = (ey < 0.01f && (ex > 0.05f || ez > 0.05f)) ? vz : vy;
-            float uu = 0.0f, vv = 0.0f;
-            memcpy(&uu, q + 0x1A, 4);
-            memcpy(&vv, q + 0x1E, 4);
-            if (!(ax > -100.0f && ax < 100.0f && ay > -100.0f && ay < 100.0f)) { bad = true; break; }
-            if (ax < qx0) qx0 = ax;
-            if (ay < qy0) qy0 = ay;
-            if (ax > qx1) qx1 = ax;
-            if (ay > qy1) qy1 = ay;
-            if (uu < qu0) qu0 = uu;
-            if (vv < qv0) qv0 = vv;
-            if (uu > qu1) qu1 = uu;
-            if (vv > qv1) qv1 = vv;
-        }
-        if (bad) continue;
-        const float w = qx1 - qx0, h = qy1 - qy0;
-        if (w < 1e-5f && h < 1e-5f) continue;                    // 退化
-        if (w > 20.0f || h > 20.0f) continue;                     // 異常に大きい
+            return (t.x > -1000.0f && t.x < 1000.0f &&
+                    t.y > -1000.0f && t.y < 1000.0f &&
+                    t.z > -1000.0f && t.z < 1000.0f);
+        };
+        if (!ok(A) || !ok(B) || !ok(C)) continue;
+
+        const float rx = (B.x - A.x) * 0.5f, ry = (B.y - A.y) * 0.5f, rz = (B.z - A.z) * 0.5f;
+        const float ux = (C.x - A.x) * 0.5f, uy = (C.y - A.y) * 0.5f, uz = (C.z - A.z) * 0.5f;
+        const float rLen = sqrtf(rx * rx + ry * ry + rz * rz);
+        const float uLen = sqrtf(ux * ux + uy * uy + uz * uz);
+        if (rLen < 1e-4f || uLen < 1e-4f) continue;          // 退化
+        if (rLen > 50.0f || uLen > 50.0f) continue;          // 異常に大きい
+
         GeneratorBlock::GeoQuad gq;
-        gq.half[0] = w * 0.5f;
-        gq.half[1] = h * 0.5f;
-        gq.center[0] = (qx1 + qx0) * 0.5f;
-        gq.center[1] = (qy1 + qy0) * 0.5f;
-        gq.uv[0] = qu0; gq.uv[1] = qv0; gq.uv[2] = qu1; gq.uv[3] = qv1;
+        gq.ctr[0] = A.x + rx + ux;
+        gq.ctr[1] = A.y + ry + uy;
+        gq.ctr[2] = A.z + rz + uz;
+        gq.aR[0] = rx; gq.aR[1] = ry; gq.aR[2] = rz;
+        gq.aU[0] = ux; gq.aU[1] = uy; gq.aU[2] = uz;
+        gq.uv[0] = A.u; gq.uv[1] = A.v;
+        gq.uv[2] = B.u + C.u - A.u;
+        gq.uv[3] = B.v + C.v - A.v;
         g.geoQuads.push_back(gq);
     }
     if (g.geoQuads.empty()) return false;
 
-    // 代表値は「有効なクワッドの union」から作る（大域 bbox は未解析領域を含みうる）
+    // 代表値（ログ・--geoflat 用）は有効なクワッドの union から作る
     {
-        float hx0 = 1e9f, hy0 = 1e9f, hx1 = -1e9f, hy1 = -1e9f;
+        float hx0 = 1e9f, hy0 = 1e9f, hz0 = 1e9f, hx1 = -1e9f, hy1 = -1e9f, hz1 = -1e9f;
         for (const GeneratorBlock::GeoQuad& gq : g.geoQuads)
         {
-            const float cx = gq.center[0], cy = gq.center[1];
-            const float ex2 = gq.half[0], ey2 = gq.half[1];
-            if (cx - ex2 < hx0) hx0 = cx - ex2;
-            if (cy - ey2 < hy0) hy0 = cy - ey2;
-            if (cx + ex2 > hx1) hx1 = cx + ex2;
-            if (cy + ey2 > hy1) hy1 = cy + ey2;
+            for (int sx = -1; sx <= 1; sx += 2)
+            {
+                for (int sy = -1; sy <= 1; sy += 2)
+                {
+                    const float px = gq.ctr[0] + gq.aR[0] * (float)sx + gq.aU[0] * (float)sy;
+                    const float py = gq.ctr[1] + gq.aR[1] * (float)sx + gq.aU[1] * (float)sy;
+                    const float pz = gq.ctr[2] + gq.aR[2] * (float)sx + gq.aU[2] * (float)sy;
+                    if (px < hx0) hx0 = px;
+                    if (py < hy0) hy0 = py;
+                    if (pz < hz0) hz0 = pz;
+                    if (px > hx1) hx1 = px;
+                    if (py > hy1) hy1 = py;
+                    if (pz > hz1) hz1 = pz;
+                }
+            }
         }
         g.hasGeo = true;
         g.geoHalf[0]   = (hx1 - hx0) * 0.5f;
         g.geoHalf[1]   = (hy1 - hy0) * 0.5f;
         g.geoCenter[0] = (hx1 + hx0) * 0.5f;
         g.geoCenter[1] = (hy1 + hy0) * 0.5f;
+        // 水平（XZ 平面）か: 有効クワッド全体の Y 厚みがほぼ 0 なら地面デカール
+        g.geoFlat = ((hy1 - hy0) < 0.01f && ((hx1 - hx0) > 0.05f || (hz1 - hz0) > 0.05f));
+        // UV の代表レンジ（全クワッドの union）
+        float tu0 = 1e9f, tv0 = 1e9f, tu1 = -1e9f, tv1 = -1e9f;
+        for (const GeneratorBlock::GeoQuad& gq : g.geoQuads)
+        {
+            for (int k = 0; k < 4; k += 2)
+            {
+                if (gq.uv[k + 0] < tu0) tu0 = gq.uv[k + 0];
+                if (gq.uv[k + 1] < tv0) tv0 = gq.uv[k + 1];
+                if (gq.uv[k + 0] > tu1) tu1 = gq.uv[k + 0];
+                if (gq.uv[k + 1] > tv1) tv1 = gq.uv[k + 1];
+            }
+        }
+        if (tu1 - tu0 > 1e-4f && tv1 - tv0 > 1e-4f)
+        {
+            g.geoUV[0] = tu0; g.geoUV[1] = tv0; g.geoUV[2] = tu1; g.geoUV[3] = tv1;
+        }
+        else
+        {
+            g.geoUV[0] = 0.0f; g.geoUV[1] = 0.0f; g.geoUV[2] = 1.0f; g.geoUV[3] = 1.0f;
+        }
     }
-
-    // Y がほぼ 0 で XZ に広がる場合は地面平面（デカール）として扱う
-    g.geoFlat = (ey < 0.01f && (ex > 0.05f || ez > 0.05f));
-
-    // UV が退化している場合は全面（0,0,1,1）にフォールバック
-    if (u1 - u0 > 1e-4f && v1 - v0 > 1e-4f)
-    {
-        g.geoUV[0] = u0; g.geoUV[1] = v0; g.geoUV[2] = u1; g.geoUV[3] = v1;
-    }
-    else
-    {
-        g.geoUV[0] = 0.0f; g.geoUV[1] = 0.0f; g.geoUV[2] = 1.0f; g.geoUV[3] = 1.0f;
-    }
-
-    // テクスチャ名: 0x1E に 8 文字×2（グループ名 + specific 名）＝ 0x20 の 16 バイト名と同じ
-    //   実測: 'fire'  → "fire1   " + "fire16  "
-    //         'f101'  → "firef1  " + "f10f    "
-    {
-        memcpy(g.geoName16, p + 0x1E, 16);
-        g.geoName16[16] = '\0';
-        memcpy(g.geoName, p + 0x1E, 8);
-        g.geoName[8] = '\0';
-        for (int i = 7; i >= 0 && (g.geoName[i] == ' ' || g.geoName[i] == '\0'); --i) g.geoName[i] = '\0';
-    }
+    ReadGeoName(p, g);
     return true;
+}
+
+// テクスチャ名: 0x1E に 8 文字×2（グループ名 + specific 名）＝ 0x20 の 16 バイト名と同じ
+//   実測: 'fire'  → "fire1   " + "fire16  "
+//         'f101'  → "firef1  " + "f10f    "
+static void ReadGeoName(const uint8_t* p, GeneratorBlock& g)
+{
+    memcpy(g.geoName16, p + 0x1E, 16);
+    g.geoName16[16] = '\0';
+    memcpy(g.geoName, p + 0x1E, 8);
+    g.geoName[8] = '\0';
+    for (int i = 7; i >= 0 && (g.geoName[i] == ' ' || g.geoName[i] == '\0'); --i) g.geoName[i] = '\0';
 }
 
 void MotionInstance::Reset(const DatFile* d, const GeneratorBlock* g, float start, int tex, int op, bool applyGeo)

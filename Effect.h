@@ -130,12 +130,14 @@ struct GeneratorBlock
     float    geoCenter[2] = { 0.0f, 0.0f };
     float    geoUV[4]     = { 0.0f, 0.0f, 1.0f, 1.0f };
 
-    // 6 頂点（=2 三角形）ごとのサブクワッド。実頂点に近い形状で描くため
+    // 6 頂点（=2 三角形）ごとのサブクワッド。実頂点の 3D 形状をそのまま保持する
+    //   A=v0, B=v1, C=v2 の 3 頂点から平行四辺形を作る（A' = B + C - A が対角）
     struct GeoQuad
     {
-        float half[2]   = { 0.0f, 0.0f };
-        float center[2] = { 0.0f, 0.0f };
-        float uv[4]     = { 0.0f, 0.0f, 1.0f, 1.0f };
+        float ctr[3] = { 0.0f, 0.0f, 0.0f };   // 中心
+        float aR[3]  = { 0.0f, 0.0f, 0.0f };   // 中心→B 方向の半分
+        float aU[3]  = { 0.0f, 0.0f, 0.0f };   // 中心→C 方向の半分
+        float uv[4]  = { 0.0f, 0.0f, 1.0f, 1.0f };
     };
     std::vector<GeoQuad> geoQuads;
     char     geoName[9]   = {};   // 0x1F +0x1E の 8 文字（グループ名）

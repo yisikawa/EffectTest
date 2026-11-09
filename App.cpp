@@ -537,25 +537,29 @@ static void RenderScene(bool present)
 
                 for (const GeneratorBlock::GeoQuad& gq : mi.gen->geoQuads)
                 {
-                    float cq[3] = {
-                        center[0] + axR[0] * gq.center[0] + axU[0] * gq.center[1],
-                        center[1] + axR[1] * gq.center[0] + axU[1] * gq.center[1],
-                        center[2] + axR[2] * gq.center[0] + axU[2] * gq.center[1] };
+                    // 3D の実頂点形状（A/B/C から作った平行四辺形）をそのまま使う
+                    float cq[3] = { center[0] + gq.ctr[0] * s[0],
+                                    center[1] + gq.ctr[1] * s[1],
+                                    center[2] + gq.ctr[2] * s[2] };
+                    float aR[3] = { gq.aR[0] * s[0] * g_SizeScale,
+                                    gq.aR[1] * s[1] * g_SizeScale,
+                                    gq.aR[2] * s[2] * g_SizeScale };
+                    float aU[3] = { gq.aU[0] * s[0] * g_SizeScale,
+                                    gq.aU[1] * s[1] * g_SizeScale,
+                                    gq.aU[2] * s[2] * g_SizeScale };
 
                     if (Mptr != nullptr)
                     {
+                        // 位置は w=1、辺ベクトルは w=0 で変換（アフィン）
                         const XMMATRIX M = XMLoadFloat4x4(reinterpret_cast<const XMFLOAT4X4*>(Mptr));
                         XMFLOAT3 tmp = {};
                         XMStoreFloat3(&tmp, XMVector3Transform(XMVectorSet(cq[0], cq[1], cq[2], 1.0f), M));
                         cq[0] = tmp.x; cq[1] = tmp.y; cq[2] = tmp.z;
+                        XMStoreFloat3(&tmp, XMVector3TransformNormal(XMVectorSet(aR[0], aR[1], aR[2], 0.0f), M));
+                        aR[0] = tmp.x; aR[1] = tmp.y; aR[2] = tmp.z;
+                        XMStoreFloat3(&tmp, XMVector3TransformNormal(XMVectorSet(aU[0], aU[1], aU[2], 0.0f), M));
+                        aU[0] = tmp.x; aU[1] = tmp.y; aU[2] = tmp.z;
                     }
-
-                    float aR[3] = { axR[0] * gq.half[0] * g_SizeScale,
-                                    axR[1] * gq.half[0] * g_SizeScale,
-                                    axR[2] * gq.half[0] * g_SizeScale };
-                    float aU[3] = { axU[0] * gq.half[1] * g_SizeScale,
-                                    axU[1] * gq.half[1] * g_SizeScale,
-                                    axU[2] * gq.half[1] * g_SizeScale };
 
                     GfxDrawQuad(cq, aR, aU, rgbaG, gq.uv, srv);
                 }
