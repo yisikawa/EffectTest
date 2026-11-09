@@ -363,6 +363,11 @@ bool EffectContext::BuildInternal(const DatFile& dat, const char* mainChunkName)
                 uint16_t bil = 1;
                 memcpy(&bil, q + 0x04, 2);
                 g.bil = (int)bil;
+
+                // +0x06 はアタッチ部位 ID（参考: 0x001=中心, 0x081=右腕, 0x0C1=頭 …）
+                uint16_t pid = 0;
+                memcpy(&pid, q + 0x06, 2);
+                g.partId = (int)pid;
                 memcpy(g.partName, q + 0x0C, 4);
                 g.partName[4] = '\0';
                 memcpy(&g.partOfs[0], q + 0x10, 4);

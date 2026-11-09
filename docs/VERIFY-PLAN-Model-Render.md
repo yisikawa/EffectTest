@@ -257,6 +257,19 @@ $ROM='C:\Program Files (x86)\PlayOnline\SquareEnix\FINAL FANTASY XI\ROM'
 - `12\43` = **3,628 / 257**（同 3,504 / 257）、`11\22` = **6,521 / 247**（不変）
 - `データ2 op 0x01` の `+0x10/+0x14/+0x18`（±10 m 以内）をインスタンス位置へ加算（`hasPartOfs`）
 
+### V-M19 `--bone-map part`（部位 ID → 骨）
+
+```powershell
+$ROM='C:\Program Files (x86)\PlayOnline\SquareEnix\FINAL FANTASY XI\ROM'
+.\x64\Release\EffectTest.exe --shot --frames 90 --bone-map part --motion idl0 "$ROM\11\18.DAT" pm90.png
+.\x64\Release\EffectTest.exe --shot --frames 180 --bg 40F0F0 --bone-map part --motion idl0 "$ROM\11\18.DAT" pm180.png
+Select-String -Path effecttest_log.txt -Pattern 'part inst='
+```
+期待（実測値・2026-11-09）:
+- ログ: `partId=0x000 zone=0 -> bone=58`（中心 9 件）、`partId=0x080 zone=8 -> bone=68`（右腕 2 件）
+- 90 フレーム = **5,122 / 455**、180 フレーム（`--bg 40F0F0`）= **5,280 / 544**
+- 比較: 単一骨 4,429 / 692、`auto` 8,513 / 748 → `part` が**参照に最も近い**
+
 ## 3. 失敗時の切り分け
 
 ### 3.0 既定サイズモードの変更（2026-11-09）

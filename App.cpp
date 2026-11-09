@@ -1682,7 +1682,64 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
             g_InstHasBone.assign(n, 0);
 
             const char* s = boneMap;
-            if (_stricmp(boneMap, "auto") == 0)
+            if (_stricmp(boneMap, "part") == 0)
+            {
+                // 部位 ID（op 0x01 の +0x06）→ 骨を推定して割り当てる
+                //   参考: 0x001/0x011=中心, 0x021=胴, 0x081=右腕, 0x091=左腕,
+                //         0x0A1=右足, 0x0B1=左足, 0x0C1=頭 …
+                //   骨名が無いため Y（高さ）と X（左右）で最近傍を選ぶ
+                auto pickBone = [&](int partId) -> int
+                {
+                    const int zones = partId >> 4;      // 0..0x14, 0x20
+                    float ty = 1.00f;                   // 目標の高さ
+                    float tx = 0.0f;                    // 目標の左右（+右 / -左）
+                    if (zones <= 1)                    { ty = 1.00f; tx = 0.00f; }   // 中心
+                    else if (zones == 2)               { ty = 1.05f; tx = 0.00f; }   // 胴
+                    else if (zones == 3)               { ty = 0.95f; tx = 0.00f; }
+                    else if (zones == 4)               { ty = 1.10f; tx = 0.00f; }   // 胴前面
+                    else if (zones == 7)               { ty = 1.00f; tx = 0.00f; }   // 手前
+                    else if (zones == 8)               { ty = 1.35f; tx = 0.22f; }   // 右腕
+                    else if (zones == 9)               { ty = 1.35f; tx = -0.22f; }  // 左腕
+                    else if (zones == 10)              { ty = 0.45f; tx = 0.10f; }   // 右足
+                    else if (zones == 11)              { ty = 0.45f; tx = -0.10f; }  // 左足
+                    else if (zones == 12)              { ty = 1.65f; tx = 0.00f; }   // 頭
+                    else if (zones == 13 || zones == 14) { ty = 1.30f; tx = 0.22f; } // 腕付近
+                    else if (zones == 15)              { ty = 1.20f; tx = -0.22f; }
+                    else if (zones == 16)              { ty = 0.40f; tx = 0.10f; }
+                    else if (zones == 17)              { ty = 0.25f; tx = 0.00f; }   // 足元
+                    else if (zones == 18)              { ty = 0.45f; tx = -0.10f; }
+                    else if (zones == 19)              { ty = 0.60f; tx = -0.10f; }
+                    else if (zones == 20)              { ty = 0.40f; tx = 0.10f; }
+                    else if (zones == 32)              { ty = 1.20f; tx = 0.25f; }   // 0x201 右手前
+
+                    int best = -1;
+                    float bestD = 1e9f;
+                    for (int b = 0; b < skel.BoneCount(); ++b)
+                    {
+                        const float* w = skel.World(b);
+                        if (w == nullptr) continue;
+                        const float dx = w[12] - tx;
+                        const float dy = w[13] - ty;
+                        const float d = dx * dx + dy * dy;
+                        if (d < bestD) { bestD = d; best = b; }
+                    }
+                    return best;
+                };
+
+                for (size_t i = 0; i < n; ++i)
+                {
+                    const int pid = g_Effect.Instances()[i].gen->partId;
+                    const int b = pickBone(pid >= 0 ? pid : 0x001);
+                    if (b < 0) continue;
+                    const float* w = skel.World(b);
+                    if (w == nullptr) continue;
+                    memcpy(&g_InstMats[i * 16], w, 16 * sizeof(float));
+                    g_InstHasBone[i] = 1;
+                    Log("[shot] part inst=%zu chunk=%s partId=0x%03X zone=%d -> bone=%d",
+                        i, g_Effect.Instances()[i].gen->chunk.name, pid, (pid >> 4), b);
+                }
+            }
+            else if (_stricmp(boneMap, "auto") == 0)
             {
                 // 体軸（Y）に沿って均等に骨を割り当てる（根拠: 参照動画は体の各所に炎が付く）
                 //   0.05〜1.75 m の範囲に入る骨を Y で並べ、インスタンス数で等分する

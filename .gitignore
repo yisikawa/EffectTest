@@ -119,3 +119,8 @@ Thumbs.db
 /t[0-9].png
 /t_*.png
 /u[0-9].png
+/pt[0-9].png
+/pm[0-9]*.png
+/sheetF.png
+/v1.png
+/fin2.png
