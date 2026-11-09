@@ -465,8 +465,9 @@ static void RenderScene(bool present)
             const float sy2 = (s[1] > 0.001f) ? s[1] : 1.0f;
 
             // 0x1F が地面平面（Y=0 の XZ クワッド）なら、カメラ正対ではなく世界軸で描く
-            //   ※ 既定は無効（--geoflat on で有効）。11\22 では地面デカールが大きく出る
-            const bool  flat = g_GeoFlat && mi.gen->hasGeo && mi.gen->geoFlat;
+            //   ※ 既定は無効（--geoflat on で有効）。データの bil=0（平面）を優先する
+            const bool  flat = g_GeoFlat && mi.gen->hasGeo &&
+                               (mi.gen->bil == 0 || mi.gen->geoFlat);
             float       wR[3] = { 1.0f, 0.0f, 0.0f };
             float       wU[3] = { 0.0f, 0.0f, 1.0f };
             const float* axR = flat ? wR : right;
@@ -1743,8 +1744,9 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
             const float* pp = su.sub.At(SUB_POS);
             const float* ss = su.sub.At(SUB_SCALE);
             const float* cc = su.sub.At(SUB_COLOR);
-            Log("[shot] inst %s subs=%d pos=(%.2f,%.2f,%.2f) scl=(%.2f,%.2f,%.2f) col=(%.2f,%.2f,%.2f,%.2f) tex=%d link=%s uv=(%.3f,%.3f,%.3f,%.3f) frm=%d/%zu geo=%d flat=%d half=(%.3f,%.3f) ctr=(%.3f,%.3f) srv=%p",
-                mi.gen->chunk.name, mi.SubCount(), pp[0], pp[1], pp[2], ss[0], ss[1], ss[2],
+            Log("[shot] inst %s subs=%d bil=%d pos=(%.2f,%.2f,%.2f) scl=(%.2f,%.2f,%.2f) col=(%.2f,%.2f,%.2f,%.2f) tex=%d link=%s uv=(%.3f,%.3f,%.3f,%.3f) frm=%d/%zu geo=%d flat=%d half=(%.3f,%.3f) ctr=(%.3f,%.3f) srv=%p",
+                mi.gen->chunk.name, mi.SubCount(), mi.gen->bil,
+                pp[0], pp[1], pp[2], ss[0], ss[1], ss[2],
                 cc[0], cc[1], cc[2], cc[3], mi.texIndex, mi.gen->linkName,
                 su.uv[0], su.uv[1], su.uv[2], su.uv[3], su.frameIdx, mi.gen->texFrames.size(),
                 mi.gen->hasGeo ? 1 : 0, mi.gen->geoFlat ? 1 : 0,

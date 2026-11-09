@@ -115,3 +115,6 @@ Thumbs.db
 /sheetD.png
 /p[0-9].png
 /sheetE.png
+/s[0-9].png
+/t[0-9].png
+/t_*.png

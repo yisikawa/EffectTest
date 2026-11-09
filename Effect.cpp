@@ -351,6 +351,26 @@ bool EffectContext::BuildInternal(const DatFile& dat, const char* mainChunkName)
         memcpy(&o, p + 0x88, 4); g.tblC = g.payloadOff + (o - 0x90);
         memcpy(&o, p + 0x8C, 4); g.tblD = g.payloadOff + (o - 0x90);
 
+        // データ2 の先頭 op 0x01（48 B）: bil / テクスチャ名 / 位置オフセット
+        //   参考: cosmosa.jp/ffxitool/generator.html
+        //     WORD bil (0=平面, 1=ビルボード), LONG ID, LONG dmy, float x,y,z …
+        //   実測: 11\17 g000 → 01 0C 00 00 | 01 00 | … | 'fai1' | 0 | 0 | -0.1
+        if (dat.InRange(g.tblB, 48))
+        {
+            const uint8_t* q = dat.At(g.tblB);
+            if (q != nullptr && q[0] == 0x01 && (q[1] & 0x1F) >= 11)
+            {
+                uint16_t bil = 1;
+                memcpy(&bil, q + 0x04, 2);
+                g.bil = (int)bil;
+                memcpy(g.partName, q + 0x0C, 4);
+                g.partName[4] = '\0';
+                memcpy(&g.partOfs[0], q + 0x10, 4);
+                memcpy(&g.partOfs[1], q + 0x14, 4);
+                memcpy(&g.partOfs[2], q + 0x18, 4);
+            }
+        }
+
         if (!dat.InRange(g.tblA, 1)) g.tblA = g.payloadOff;
         if (!dat.InRange(g.tblB, 1)) g.tblB = g.payloadOff;
         if (!dat.InRange(g.tblC, 1)) g.tblC = g.payloadOff;

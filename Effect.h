@@ -113,6 +113,11 @@ struct GeneratorBlock
     uint8_t  flag     = 0;      // +0x79
     char     linkName[5] = {};  // +0xAC の 4 文字リンク名（0x20/0x1F/0x21/0x3D/base/予約語）
     char     texName[9]  = {};  // 同名 0x21 の +0x20（specific 名 8 文字）。テクスチャ解決に使う
+
+    // データ2 の op 0x01（48 B）: bil（0=平面 / 1=ビルボード）、+0x0C に 4 文字名
+    int      bil = 1;           // 既定はビルボード
+    char     partName[5] = {};  // op 0x01 の +0x0C（テクスチャ名 4 文字）
+    float    partOfs[3] = { 0.0f, 0.0f, 0.0f };   // op 0x01 の +0x10/+0x14/+0x18
     std::vector<TexFrame> texFrames;   // 同名の 0x21 があればそのフレーム列（無ければ空）
 
     // 0x1F（ジオメトリ）: 頂点は half-float(16bit) 位置。寸法と UV を bbox で持つ
