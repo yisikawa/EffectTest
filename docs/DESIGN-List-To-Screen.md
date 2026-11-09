@@ -30,6 +30,10 @@ List から選んだ項目を**そのまま画面に表示**する。Effect な�
 - **表示のトリガーは List の項目の単一選択**（クリック。ダブルクリックも同義＝後方互換）。
   Schedule の選択は、既に表示中のモデルの Schedule を再生する操作（2026-11-09 変更。v1 はダブルクリック確定だった）。
 - ベースエフェクト（`0/0`）は起動時に読むが**索引のみ**で、描画は一切しない。
+- **画面描画は DirectX 11（D3D11）前提**: `D3D11CreateDeviceAndSwapChain`（Feature Level は **11_0 → 10_1 → 10_0** の順でフォールバック、`Gfx.cpp:115-119`）、
+  `ID3D11Device` / `ID3D11DeviceContext` ＋ DXGI スワップチェーン。ビルドは **v143 / C++17 / Windows SDK 10.0** で
+  `d3d11.lib; dxgi.lib; d3dcompiler.lib` をリンク（`EffectTest.vcxproj` の `PlatformToolset`=v143 / `LanguageStandard`=stdcpp17 / `WindowsTargetPlatformVersion`=10.0）。
+  **D3D12 / Vulkan / OpenGL への移行は本設計の対象外**。
 - **画面描画は秒間 60 コマ（60 fps / 1 コマ = 16.67 ms）を前提**とする。待ち時間・遅延は**コマ数**で表す
   （秒で表す場合は 60 fps 換算。例: 7 コマ = 116.7 ms）。エフェクトの時間基準（`delay / 60`）と同一の時間軸を使う。
 
@@ -393,7 +397,7 @@ WM_COMMAND / IDC_SCHEDULE / LBN_SELCHANGE または LBN_DBLCLK
 **目標値**: 単一選択→Schedule 反映 **3 コマ以内（50 ms 以下）**（ROM1 最大 DAT、`load_ms` をログ出力）／1,266 件で ↑↓ 長押し 2 秒でも **60 fps 維持**（フレーム落ち 5% 未満）。
 
 > **本設計は秒間 60 コマを前提**とする。待ちは時間ではなく**コマ数**で持ち、実装も描画ループのフレームカウンタで消化する（`SetTimer` / `WM_TIMER` は使わない＝コマ基準を保証するため）。
-> 60 fps の根拠: エフェクトの時間基準が `delay / 60.0f`（`Effect.cpp:232`）、描画は vsync（`Gfx.cpp:112` ウィンドウモード / `:310` `Present(1,0)`）＝60 Hz のモニタで 60 fps。
+> 60 fps の根拠: エフェクトの時間基準が `delay / 60.0f`（`Effect.cpp:232`）、描画は **D3D11 + vsync**（`Gfx.cpp:102-113` の `DXGI_SWAP_CHAIN_DESC`＝`Windowed=TRUE` / `BufferCount=1` / `DXGI_SWAP_EFFECT_DISCARD`、`:310` の `Present(1,0)`）＝60 Hz のモニタで 60 fps。
 > 60 fps を下回る環境（30 Hz 等）では 7 コマ = 233 ms になるが、**60 fps 前提の帰結**として許容する（再生速度・位置は実測 `dt` のため影響を受けない）。
 
 #### 4.7.7 現行 EffectTest への影響（`App.cpp` のみ）
