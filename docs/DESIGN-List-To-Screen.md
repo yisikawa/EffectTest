@@ -30,6 +30,8 @@ List から選んだ項目を**そのまま画面に表示**する。Effect な�
 - **表示のトリガーは List の項目の単一選択**（クリック。ダブルクリックも同義＝後方互換）。
   Schedule の選択は、既に表示中のモデルの Schedule を再生する操作（2026-11-09 変更。v1 はダブルクリック確定だった）。
 - ベースエフェクト（`0/0`）は起動時に読むが**索引のみ**で、描画は一切しない。
+- **画面描画は秒間 60 コマ（60 fps / 1 コマ = 16.67 ms）を前提**とする。待ち時間・遅延は**コマ数**で表す
+  （秒で表す場合は 60 fps 換算。例: 7 コマ = 116.7 ms）。エフェクトの時間基準（`delay / 60`）と同一の時間軸を使う。
 
 ### スコープ内
 - **起動時にベースエフェクト（`ROM\0\0.DAT`）を必ず先読み**（詳細は §4.6）
@@ -299,7 +301,7 @@ ModelTest.exe --base
 | D1 | **モデルの単一選択（クリック / キー移動）で即時**に DAT を読み、Schedule 一覧を更新する。ダブルクリックは同義（後方互換） | AltanaView と同じ操作感。現行はダブルクリックするまで 3 段目が空だった |
 | D2 | 3 段目は COMBOBOX ではなく **LISTBOX**（常時見える一覧）＋件数ラベル | 一覧性。`Schedule (39)` のように件数を併記 |
 | D3 | 用語は **Schedule** に統一（= `0x07`。AltanaView の `[NPC] Schedule` と同義）。v1 の「Action」は別名 | `AltanaView.ini` の `Schedule=` / 実測 `ROM\131\6.DAT` の `0x07`=39 件 |
-| D4 | **120 ms デバウンス**＋確定 index ガード | 1,266 件リスト（R4）でのキー連打耐性 |
+| D4 | **7 コマ（60 fps で 116.7 ms）静止後に確定**＋確定 index ガード（待ちはコマ基準） | 1,266 件リスト（R4）でのキー連打耐性 |
 | D5 | Schedule は**入れ替え**（蓄積しない＝常に選択中の 1 モデル分） | `0x07` はモデル DAT 内の資源。混在させると解決先が曖昧になる |
 | D6 | Schedule は**行の選択で即再生**（現行 combo の挙動を踏襲）。`R` リセット / `Space` 一時停止 | 既存操作との連続性（`App.cpp:469` / `:453`） |
 
@@ -332,11 +334,13 @@ g_hSchedule      : x=8, y=bottom-136,    w, h=128         … 6〜7 行が見え
 
 ```
 WM_COMMAND / IDC_ITEMS / LBN_SELCHANGE または LBN_DBLCLK
-    g_PendingItem = LB_GETCURSEL
-    KillTimer(hPanel, IDT_COMMIT) → SetTimer(hPanel, IDT_COMMIT, 120, nullptr)   … 静止後に 1 回だけ
+    g_PendingItem   = LB_GETCURSEL
+    g_PendingFrames = 0                    … 選択が来るたびにカウンタを戻す
 
-WM_TIMER / IDT_COMMIT
-    KillTimer → CommitSelection(g_PendingItem)
+描画ループ（毎フレーム = 60 fps 前提）          // TickPendingCommit()
+    g_PendingItem < 0                 → return
+    ++g_PendingFrames < 7             → return      // 7 コマ（116.7 ms）静止したら確定
+    CommitSelection(g_PendingItem); g_PendingItem = -1
 
 CommitSelection(index):                        // 唯一の確定経路
     index < 0 || g_CommitBusy            → return
@@ -381,29 +385,30 @@ WM_COMMAND / IDC_SCHEDULE / LBN_SELCHANGE または LBN_DBLCLK
 
 | 対策 | 内容 |
 |---|---|
-| デバウンス | `SetTimer` 120 ms（↑↓ 長押し・連続クリックで DAT 読みが発火しない） |
+| デバウンス | **7 コマ**（60 fps で 116.7 ms）静止後に確定。選択が来るたびにカウンタを 0 に戻す（↑↓ 長押し・連続クリックで DAT 読みが発火しない） |
 | 確定 index ガード | 同一グループ・同一 index は no-op（ダブルクリックの 2 回目を吸収） |
 | 再入フラグ | `g_CommitBusy` で `CommitSelection` の多重実行を抑止 |
 | タイマ破棄 | グループ変更（`FillItems`）で `KillTimer` |
 
-**目標値**: 単一選択→Schedule 反映 **< 50 ms**（ROM1 最大 DAT、`load_ms` をログ出力）／1,266 件で ↑↓ 長押し 2 秒のフレーム落ち 5% 未満。
+**目標値**: 単一選択→Schedule 反映 **3 コマ以内（50 ms 以下）**（ROM1 最大 DAT、`load_ms` をログ出力）／1,266 件で ↑↓ 長押し 2 秒でも **60 fps 維持**（フレーム落ち 5% 未満）。
 
-> **120 ms はフレーム数ではなく実時間（壁時計）の待ち**（`SetTimer`）。**60 fps（vsync）を標準前提**とすれば **7 コマ相当（116.7 ms）**で、実質はご指摘のとおり 60 コマ基準と一致する。ただし指定は時間で行い、120/144 Hz や 30 Hz 環境でも「指を離してから 0.12 秒」を保つ（フレーム基準にすると低 fps ほど待ちが伸びる）。
-> 参考: 本アプリは **ウィンドウモード + vsync**（`Gfx.cpp:112` `sd.Windowed = TRUE` / `:310` `Present(1,0)`）。この場合 `BufferDesc.RefreshRate`（`:107` の 60/1）は DXGI に無視され、**実際のモニタのリフレッシュレート**に同期する（60 Hz なら約 60 fps）。
-> なお**エフェクト時間の基準は固定 60 fps**（`Effect.cpp:232` の `delay / 60.0f`）で、進行は実測 `dt`（`App.cpp:1177`、0.1 s でクランプ）のため、**30 fps でも 120 fps でも再生速度は同じ**。
+> **本設計は秒間 60 コマを前提**とする。待ちは時間ではなく**コマ数**で持ち、実装も描画ループのフレームカウンタで消化する（`SetTimer` / `WM_TIMER` は使わない＝コマ基準を保証するため）。
+> 60 fps の根拠: エフェクトの時間基準が `delay / 60.0f`（`Effect.cpp:232`）、描画は vsync（`Gfx.cpp:112` ウィンドウモード / `:310` `Present(1,0)`）＝60 Hz のモニタで 60 fps。
+> 60 fps を下回る環境（30 Hz 等）では 7 コマ = 233 ms になるが、**60 fps 前提の帰結**として許容する（再生速度・位置は実測 `dt` のため影響を受けない）。
 
 #### 4.7.7 現行 EffectTest への影響（`App.cpp` のみ）
 
 | 箇所 | 現状 | 変更 |
 |---|---|---|
-| `enum`（`:80`） | `IDC_ACTION` | `IDC_SCHEDULE`（値 1003 維持）、`IDC_SCHEDULE_LABEL=1004`、`IDT_COMMIT=1` |
-| グローバル（`:64-75`） | `g_hAction` / `g_ActionNames` | `g_hSchedule` / `g_hScheduleLabel` / `g_ScheduleNames` / `g_PendingItem` / `g_CommittedItem` / `g_CommittedGroup` / `g_CommitBusy` |
+| `enum`（`:80`） | `IDC_ACTION` | `IDC_SCHEDULE`（値 1003 維持）、`IDC_SCHEDULE_LABEL=1004`、`kCommitDelayFrames = 7`（定数） |
+| グローバル（`:64-75`） | `g_hAction` / `g_ActionNames` | `g_hSchedule` / `g_hScheduleLabel` / `g_ScheduleNames` / `g_PendingItem` / `g_PendingFrames` / `g_CommittedItem` / `g_CommittedGroup` / `g_CommitBusy` |
 | `BuildPanelControls`（`:537`） | COMBOBOX 1 個 | LISTBOX＋STATIC に置換、初期は `EnableWindow(FALSE)` |
 | `LayoutPanel`（`:524`） | 3 要素 | 上記の式へ |
 | `FillItems`（`:575`） | `CB_RESETCONTENT` | `KillTimer`、Schedule 空・無効、確定 index リセット |
 | `LoadListSelection`（`:599`） | 確定処理 | `CommitSelection` に改称（§4.7.3 の分岐） |
 | `PlaySelectedAction`（`:648`） | `g_ActionNames` | `PlaySelectedSchedule` に改称（中身は同一） |
-| `PanelProc`（`:686-704`） | `LBN_DBLCLK` のみ | `LBN_SELCHANGE`（デバウンス）、`IDC_SCHEDULE` の `LBN_SELCHANGE`/`LBN_DBLCLK`、`WM_TIMER` |
+| `PanelProc`（`:686-704`） | `LBN_DBLCLK` のみ | `LBN_SELCHANGE` を追加（選択を pending に記録）、`IDC_SCHEDULE` の `LBN_SELCHANGE`/`LBN_DBLCLK`。**`WM_TIMER` は使わない** |
+| 描画ループ（`:1166-1182`） | `g_Effect.Advance(g_Dt)` のみ | 毎フレーム `TickPendingCommit()` を呼び、7 コマ静止で確定（`kCommitDelayFrames`） |
 | 新規ヘルパ | — | `ScheduleClear()` / `ClearSelection()` / `UpdateScheduleLabel()`（計 30 行程度） |
 
 - 変更しない: `Dat.*` / `Effect.*` / `EffectVm.*` / `ListDb.*` / `Tim.*` / `Gfx.*` / `EffectBase.*`
@@ -419,7 +424,7 @@ WM_COMMAND / IDC_SCHEDULE / LBN_SELCHANGE または LBN_DBLCLK
 | 回帰（Effect） | `--shot "…\ROM\11\17.DAT" out.png` | timeline=18 / spawn=8 / 3.3333 s / 非背景 > 6,000 |
 | UI 手動 | `NPC ROM1` → `ヒューム♀NPC (3-11)` を**シングルクリック** | ラベル `Schedule (n)`、リストに `0x07` 名が並ぶ |
 | UI 手動（失敗系） | 存在しない ROM / 壊れた DAT | 背景のみに戻り、ログに `clear:` |
-| 性能 | ↑↓ 長押し 2 秒・連続クリック | §4.7.6 の目標値 |
+| 性能 | ↑↓ 長押し 2 秒・連続クリック（60 fps 維持を計測） | §4.7.6 の目標値 |
 
 
 
