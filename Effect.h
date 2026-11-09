@@ -97,6 +97,7 @@ struct GeneratorBlock
     uint16_t frames   = 0;      // +0x76
     uint8_t  count    = 0;      // +0x78
     uint8_t  flag     = 0;      // +0x79
+    char     linkName[5] = {};  // +0xAC の 4 文字リンク名（0x20/0x1F/0x21/0x3D/base/予約語）
 
     inline float Length() const { return (frames + 1) * (1.0f / 60.0f); }
 };
@@ -156,6 +157,7 @@ public:
     const uint8_t* LastColor() const { return m_LastColor; }
 
     const GeneratorBlock* FindGenerator(const char* name4) const;
+    int FindTextureIndex(const char* name4) const;   // +0xAC のリンク名 → 0x20 の番号（無ければ -1）
     ID3D11ShaderResourceView* TextureSrv(int index) const;
 
 private:
@@ -168,6 +170,7 @@ private:
     std::vector<GeneratorBlock> m_Generators;
     std::vector<MotionInstance> m_Instances;
     std::vector<TimTexture>     m_Textures;
+    std::vector<std::string>    m_TexNames;   // 0x20 チャンク名（チャンク順。texIndex の基準）
 
     size_t   m_Ip       = 0;
     float    m_TimeLeft = 0.0f;

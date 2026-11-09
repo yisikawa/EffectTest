@@ -46,6 +46,7 @@ bool EffectContext::BuildInternal(const DatFile& dat, const char* mainChunkName)
     m_Timeline.clear();
     m_Generators.clear();
     m_Textures.clear();
+    m_TexNames.clear();
     m_Instances.clear();
     m_Duration = 0.0f;
 
@@ -54,6 +55,7 @@ bool EffectContext::BuildInternal(const DatFile& dat, const char* mainChunkName)
     //--------------------------------------------------------------
     for (const DatChunk& c : dat.Chunks())
     {
+        if (c.type == 0x20) { m_TexNames.push_back(c.name); continue; }   // texIndex の基準順
         if (c.type != 0x05) continue;
         if (c.size <= 0x90) continue;                       // ヘッダ 0x90 に満たない
         if (!dat.InRange(c.offset, c.size)) continue;
@@ -69,6 +71,11 @@ bool EffectContext::BuildInternal(const DatFile& dat, const char* mainChunkName)
         uint16_t f16 = 0; memcpy(&f16, p + 0x76, 2); g.frames = f16;
         g.count = p[0x78];
         g.flag  = p[0x79];
+        if (c.size > 0xB0)
+        {
+            memcpy(g.linkName, p + 0xAC, 4);
+            g.linkName[4] = '\0';
+        }
 
         uint32_t o = 0;
         memcpy(&o, p + 0x80, 4); g.tblA = g.payloadOff + (o - 0x90);
@@ -143,8 +150,11 @@ bool EffectContext::BuildTextures(ID3D11Device* device)
     {
         if (c.type != 0x20) continue;
         TimTexture t;
-        if (CreateTimTexture(device, m_Dat->At(c.offset), c.size, t))
-            m_Textures.push_back(t);
+        if (!CreateTimTexture(device, m_Dat->At(c.offset), c.size, t))
+        {
+            t.name = c.name;      // 失敗しても index を揃えるため名前だけ保持（srv は null）
+        }
+        m_Textures.push_back(t);
     }
     CreateWhiteTexture(device, m_WhiteTex);
     return true;
@@ -245,7 +255,8 @@ void EffectContext::Spawn(const char* name4, float startSec, int op)
     if (g == nullptr) return;
 
     MotionInstance mi;
-    mi.Reset(m_Dat, g, startSec, m_Textures.empty() ? -1 : 0, op);
+    const int tex = FindTextureIndex(g->linkName);   // +0xAC のリンク名から 0x20 を解決
+    mi.Reset(m_Dat, g, startSec, tex, op);
 
     // 直近の色（op 0x2A）を初期色として与える
     float* col = mi.sub.Color();
@@ -266,6 +277,17 @@ const GeneratorBlock* EffectContext::FindGenerator(const char* name4) const
     for (const GeneratorBlock& g : m_Generators)
         if (memcmp(g.chunk.name, name4, 4) == 0) return &g;
     return nullptr;
+}
+
+// 0x05 generator の +0xAC リンク名 → 0x20 テクスチャ番号（見つからなければ -1＝白）
+int EffectContext::FindTextureIndex(const char* name4) const
+{
+    if (name4 == nullptr || name4[0] == '\0') return -1;
+    for (size_t i = 0; i < m_TexNames.size(); ++i)
+    {
+        if (memcmp(m_TexNames[i].c_str(), name4, 4) == 0) return (int)i;
+    }
+    return -1;
 }
 
 ID3D11ShaderResourceView* EffectContext::TextureSrv(int index) const
