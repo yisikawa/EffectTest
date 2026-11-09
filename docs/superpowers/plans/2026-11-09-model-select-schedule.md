@@ -8,8 +8,8 @@
 
 **Tech Stack:** C++17 / Win32 / DirectX 11 / MSBuild v143 (Release x64) / PowerShell 5.1（検証スクリプト）
 
-> テスト計画: `docs/superpowers/plans/2026-11-09-test-plan-schedule.md`
-> 検証計画: `docs/superpowers/plans/2026-11-09-verification-plan-schedule.md`
+> テスト計画: `docs/TEST-PLAN-Schedule.md`
+> 検証計画: `docs/VERIFY-PLAN-Schedule.md`
 
 ## Global Constraints
 

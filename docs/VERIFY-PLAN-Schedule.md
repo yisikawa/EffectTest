@@ -1,7 +1,7 @@
 # 検証計画書 — モデル/エフェクト選択 → Schedule 表示（2026-11-09）
 
 > 対象: `D:\projects\EffectTest`（Release / x64）
-> テスト計画: `docs/superpowers/plans/2026-11-09-test-plan-schedule.md`（ケース ID を参照）
+> テスト計画: `docs/TEST-PLAN-Schedule.md`（ケース ID を参照）
 > 実装計画: `docs/superpowers/plans/2026-11-09-model-select-schedule.md`（タスク 1〜7）
 > 設計: `docs/DESIGN-List-To-Screen.md`（§4.7 / §4.8 / §4.9）
 

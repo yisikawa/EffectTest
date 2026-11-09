@@ -538,8 +538,8 @@ needed20 = { link(g) | g ∈ needed05 かつ link(g) が 0x20 }                 
 
 > アプリに期待値を出力させると同じバグを共有するため、必要資源の正解は**外部スクリプト側**で算出する（テストの独立オラクル）。
 >
-> テスト計画: `docs/superpowers/plans/2026-11-09-test-plan-schedule.md`（T-01〜T-12）／
-> 検証計画: `docs/superpowers/plans/2026-11-09-verification-plan-schedule.md`（V-01〜V-10）
+> テスト計画: `docs/TEST-PLAN-Schedule.md`（T-01〜T-12）／
+> 検証計画: `docs/VERIFY-PLAN-Schedule.md`（V-01〜V-10）
 
 ---
 
