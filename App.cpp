@@ -43,7 +43,10 @@ namespace
     std::string   g_DatPath;
 
     bool  g_Paused    = false;
-    bool  g_Layout    = true;     // 位置 0 のインスタンスを横並びにする（確認用）
+    bool  g_Layout    = false;    // 位置 0 のインスタンスを横並びにする（確認用・既定 off）
+                              //   ※ 既定 on だと、まだ位置を計算できていないインスタンスが
+                              //     横 1.6 m 間隔で並び「横長の帯」になる（実測: 11\18 の
+                              //     fire が aspect 2.3 の横帯。参照は 0.40 の縦柱）
     bool  g_Trace     = false;
     bool  g_NoTexture = false;    // W: テクスチャを使わず白で描く（デバッグ）
     bool  g_ShowAxes  = false;    // X: 座標軸の表示（既定 OFF。起動時は何も描かない）
@@ -1606,6 +1609,16 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
                 if      (_stricmp(mode, "on")  == 0) g_Effect.SetGeo(true);
                 else if (_stricmp(mode, "off") == 0) g_Effect.SetGeo(false);
                 else { Log("[shot] unknown geo: %s", mode); return 2; }
+                continue;
+            }
+
+            if (_stricmp(tok, "--layout") == 0)
+            {
+                char mode[MAX_PATH] = {};
+                if (!NextToken(p, mode, MAX_PATH)) return 2;
+                if      (_stricmp(mode, "on")  == 0) g_Layout = true;
+                else if (_stricmp(mode, "off") == 0) g_Layout = false;
+                else { Log("[shot] unknown layout: %s", mode); return 2; }
                 continue;
             }
 
