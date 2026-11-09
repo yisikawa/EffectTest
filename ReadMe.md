@@ -354,6 +354,8 @@ AltanaView の `SetRenderState` を静的に走査すると、エフェクト描
 - GUI: `M` キーで巡回。現在のモードはタイトルとログ `[blend] <mode>` に出ます
 - ヘッドレス: `--shot --blend alpha_add|add|alpha "<dat>" out.png`（`[shot] … blend=<mode>` を出力）
 - テクスチャフレーム: `--shot --uv 0x21|full "<dat>" out.png`（既定 `uvmode=0x21`。`full` で全面サンプリングに戻る）
+- 時刻指定: `--shot --frames N "<dat>" out.png`（既定 90 = 1.5 s。1 フレーム = 1/60 s）
+- 参照動画との比較: `ffmpeg -ss <3.2 + N/60> -i fire2.mp4 -frames:v 1 -vf "crop=620:900:640:90" cmp.png`（`docs/VERIFY-PLAN-Schedule.md` V-15）
 - 画素統計: `powershell -NoProfile -ExecutionPolicy Bypass -File tools\ShotStats.ps1 -Path out_fire.png`
   → `sampled=57600 nonBg=7950 maxSum=686`
 

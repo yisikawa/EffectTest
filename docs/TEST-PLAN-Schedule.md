@@ -84,6 +84,7 @@
 | T-09 | `--shot "…\11\17.DAT" out_fire.png` | `[shot] ... blend=alpha_add uvmode=0x21 inst=8 tex=5 ok=1`、非背景 **7,968** / maxSum **686**（4px 間引き 57,600 点） | △（GPU 必須） |
 | T-09b | `--shot "…\11\18.DAT" out_fire2.png` | `ok=1` ＆ 非背景 **2,780** / maxSum 713（修正前は 0） | △ |
 | T-16 | `--shot --uv full "…\11\18.DAT"` | `uvmode=full`、非背景 **2,484**（既定 `0x21` は 2,780） | △ |
+| T-17 | `--shot --frames 60|120|180 "…\11\18.DAT"` | `frames=` が指定どおり。非背景 1,590 / 3,365 / 2,785（参照動画の 4.2 / 5.2 / 6.2 s に対応） | △ |
 
 ### T4 UI 手動
 

@@ -1172,6 +1172,7 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
         char* p = lpCmdLine + 6;
         char dat[MAX_PATH] = {};
         char png[MAX_PATH] = "effecttest_shot.png";
+        int  frames = 90;                       // 既定 90 フレーム（1.5 s）
 
         // --blend alpha_add|add|alpha（検証用。省略時は alpha_add）
         for (;;)
@@ -1187,6 +1188,16 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
                 else if (_stricmp(mode, "add")       == 0) GfxSetBlendMode(GFX_BLEND_ADD);
                 else if (_stricmp(mode, "alpha")     == 0) GfxSetBlendMode(GFX_BLEND_ALPHA);
                 else { Log("[shot] unknown blend: %s", mode); return 2; }
+                continue;
+            }
+
+            if (_stricmp(tok, "--frames") == 0)
+            {
+                char n[MAX_PATH] = {};
+                if (!NextToken(p, n, MAX_PATH)) return 2;
+                frames = atoi(n);
+                if (frames < 1) frames = 1;
+                if (frames > 100000) frames = 100000;
                 continue;
             }
 
@@ -1222,7 +1233,7 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
 
         if (!LoadDatFile(dat)) { Log("[shot] load failed: %s", dat); return 3; }
 
-        for (int i = 0; i < 90; ++i) g_Effect.Advance(1.0f / 60.0f);
+        for (int i = 0; i < frames; ++i) g_Effect.Advance(1.0f / 60.0f);
 
         // 描画入力のダンプ（原因切り分け用）
         for (const TimTexture& t : g_Effect.Textures())
@@ -1245,9 +1256,9 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
         MultiByteToWideChar(CP_ACP, 0, png, -1, wpng, MAX_PATH);
         const bool ok = GfxSaveBackBufferPNG(wpng);
 
-        Log("[shot] dat=%s png=%s blend=%s uvmode=%s inst=%zu tex=%zu ok=%d",
+        Log("[shot] dat=%s png=%s blend=%s uvmode=%s frames=%d inst=%zu tex=%zu ok=%d",
             dat, png, GfxBlendModeName(GfxGetBlendMode()),
-            g_Effect.UseTexFrames() ? "0x21" : "full",
+            g_Effect.UseTexFrames() ? "0x21" : "full", frames,
             g_Effect.Instances().size(), g_Effect.Textures().size(), ok ? 1 : 0);
 
         g_Effect.ReleaseTextures();

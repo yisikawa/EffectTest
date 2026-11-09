@@ -218,6 +218,40 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\ShotStats.ps1 -Path 
 ```
 Expected: `uvmode=full`、非背景 **2,484**（既定 `0x21` は 2,780）。`12\43` は `0x21` を持たないため `0x21`/`full` とも 13,150。
 
+### V-15 参照動画（AltanaView 実レンダリング）との比較
+
+参照: `fire2.mp4`（1920×1080 / 60 fps / 559 フレーム / 9.317 s、AltanaView の `11\18` Fire II）。
+
+```powershell
+ffprobe -v error -select_streams v:0 -show_entries stream=width,height,r_frame_rate,nb_frames `
+        -show_entries format=duration -of default=nw=1 fire2.mp4
+ffmpeg -y -v error -i fire2.mp4 -vf "fps=10,scale=960:540:flags=lanczos" frames\v_%04d.png
+ffmpeg -y -v error -i fire2.mp4 -vf "fps=10,crop=560:700:640:120,signalstats,metadata=print:key=lavfi.signalstats.YAVG:file=yavg.txt" -f null -
+```
+
+実測（エフェクト領域の平均輝度 `YAVG`、背景 = 199.267）:
+
+| 区間 | 値 | 意味 |
+|---|---|---|
+| 0.0〜3.1 s | 199.267（一定） | モデルのみ |
+| **3.2 s** | 199.403 | **エフェクト開始**（`--frames 0` に対応） |
+| 4.1〜4.2 s | 217.1（最大） | 炎が最大 |
+| 5.3〜5.4 s | 182.2（**背景より暗い**） | 煙が背景を覆う＝**アルファ合成が必要** |
+| 7.3 s | 199.26 に復帰 | 終了 = 開始から **4.1 s**（`11\18` の 4.1667 s と一致） |
+
+> 映像時刻 → エフェクト時刻の対応: **`effect_t = video_t - 3.2`**。
+> 比較は `--shot --frames <60 × effect_t> "<dat>" out.png` と、`-ss (3.2 + effect_t)` で切り出した参照フレームを並べる。
+
+現時点の差分（同一時刻で目視比較した結果）:
+
+| 項目 | 参照 | EffectTest（現状） |
+|---|---|---|
+| 色 | 橙〜白（炎）＋黒煙 | 青／白。インスタンス色が `(0.50,0.50,0.50)` のまま＝VM の色 op が効いていない |
+| 形状 | 体に沿った細い炎＋上へ煙 | 画面に散らばる大きな板（`scl=(7.60,…)` `scl=(8.62,…)`） |
+| サイズ根拠 | `0x21` のクワッド頂点（±1〜±2） | generator の scale をそのまま使用（`0x21` のローカル範囲は未使用） |
+| 煙 | 背景より暗くなる（アルファ合成） | 加算のみ（暗くできない） |
+| テクスチャ | 細かい炎のディテール | 一部が平坦な円盤（`0x21 fire` の 1 フレーム固定のため） |
+
 ## 5. ゴールデン表（数値の根拠）
 
 | 指標 | 値 |
