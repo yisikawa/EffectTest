@@ -527,6 +527,51 @@ static void RenderScene(bool present)
             float axisR[3] = { axR[0] * halfW, axR[1] * halfW, axR[2] * halfW };
             float axisU[3] = { axU[0] * halfH,    axU[1] * halfH,    axU[2] * halfH };
 
+            // 0x1F のサブクワッド描画（--geo on）: 6 頂点ごとに 1 枚ずつ描く
+            if (g_Effect.Geo() && mi.gen->hasGeo && !mi.gen->geoQuads.empty())
+            {
+                float rgbaG[4] = { c[0], c[1], c[2], c[3] };
+                if (rgbaG[0] == 0.0f && rgbaG[1] == 0.0f && rgbaG[2] == 0.0f)
+                    rgbaG[0] = rgbaG[1] = rgbaG[2] = 1.0f;
+                if (rgbaG[3] <= 0.0f) rgbaG[3] = 1.0f;
+
+                for (const GeneratorBlock::GeoQuad& gq : mi.gen->geoQuads)
+                {
+                    float cq[3] = {
+                        center[0] + axR[0] * gq.center[0] + axU[0] * gq.center[1],
+                        center[1] + axR[1] * gq.center[0] + axU[1] * gq.center[1],
+                        center[2] + axR[2] * gq.center[0] + axU[2] * gq.center[1] };
+
+                    if (Mptr != nullptr)
+                    {
+                        const XMMATRIX M = XMLoadFloat4x4(reinterpret_cast<const XMFLOAT4X4*>(Mptr));
+                        XMFLOAT3 tmp = {};
+                        XMStoreFloat3(&tmp, XMVector3Transform(XMVectorSet(cq[0], cq[1], cq[2], 1.0f), M));
+                        cq[0] = tmp.x; cq[1] = tmp.y; cq[2] = tmp.z;
+                    }
+
+                    float aR[3] = { axR[0] * gq.half[0] * g_SizeScale,
+                                    axR[1] * gq.half[0] * g_SizeScale,
+                                    axR[2] * gq.half[0] * g_SizeScale };
+                    float aU[3] = { axU[0] * gq.half[1] * g_SizeScale,
+                                    axU[1] * gq.half[1] * g_SizeScale,
+                                    axU[2] * gq.half[1] * g_SizeScale };
+
+                    GfxDrawQuad(cq, aR, aU, rgbaG, gq.uv, srv);
+                }
+
+                if (g_TraceFile != nullptr)
+                {
+                    fprintf(g_TraceFile,
+                            "%u,%d,%d,%s,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.4f,%.4f,%.4f,%.4f\n",
+                            g_Effect.Frame(), i, k, mi.gen->chunk.name,
+                            su.sub.Elapsed(), su.sub.T01(),
+                            p[0], p[1], p[2], s[0], s[1], s[2],
+                            c[0], c[1], c[2], c[3]);
+                }
+                continue;      // 通常の 1 枚描画はスキップ
+            }
+
             if (Mptr != nullptr)
             {
                 const XMMATRIX M = XMLoadFloat4x4(reinterpret_cast<const XMFLOAT4X4*>(Mptr));

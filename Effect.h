@@ -129,6 +129,15 @@ struct GeneratorBlock
     float    geoHalf[2]   = { 0.0f, 0.0f };
     float    geoCenter[2] = { 0.0f, 0.0f };
     float    geoUV[4]     = { 0.0f, 0.0f, 1.0f, 1.0f };
+
+    // 6 頂点（=2 三角形）ごとのサブクワッド。実頂点に近い形状で描くため
+    struct GeoQuad
+    {
+        float half[2]   = { 0.0f, 0.0f };
+        float center[2] = { 0.0f, 0.0f };
+        float uv[4]     = { 0.0f, 0.0f, 1.0f, 1.0f };
+    };
+    std::vector<GeoQuad> geoQuads;
     char     geoName[9]   = {};   // 0x1F が参照するテクスチャ名（4 文字）
 
     inline bool HasFrames() const { return !texFrames.empty(); }

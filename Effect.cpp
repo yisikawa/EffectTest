@@ -154,6 +154,45 @@ static bool ParseGeometry(const DatFile& dat, const char* name4, GeneratorBlock&
 
     const float ex = x1 - x0, ey = y1 - y0, ez = z1 - z0;
 
+    // 6 頂点（2 三角形）ごとのサブクワッドを作る（実頂点に近い形状）
+    g.geoQuads.clear();
+    for (uint32_t s = 0; s + 6u <= verts; s += 6u)
+    {
+        float qx0 = 1e9f, qy0 = 1e9f, qx1 = -1e9f, qy1 = -1e9f;
+        float qu0 = 1e9f, qv0 = 1e9f, qu1 = -1e9f, qv1 = -1e9f;
+        for (uint32_t v = s; v < s + 6u; ++v)
+        {
+            const uint8_t* q = p + start + v * stride;
+            uint16_t hx = 0, hy = 0, hz = 0;
+            memcpy(&hx, q + 0x00, 2);
+            memcpy(&hy, q + 0x02, 2);
+            memcpy(&hz, q + 0x04, 2);
+            const float vx = half2f(hx), vy = half2f(hy), vz = half2f(hz);
+            // 平面（XZ）なら X/Z を、それ以外は X/Y を使う
+            const float ax = vx;
+            const float ay = (ey < 0.01f && (ex > 0.05f || ez > 0.05f)) ? vz : vy;
+            float uu = 0.0f, vv = 0.0f;
+            memcpy(&uu, q + 0x1A, 4);
+            memcpy(&vv, q + 0x1E, 4);
+            if (ax < qx0) qx0 = ax;
+            if (ay < qy0) qy0 = ay;
+            if (ax > qx1) qx1 = ax;
+            if (ay > qy1) qy1 = ay;
+            if (uu < qu0) qu0 = uu;
+            if (vv < qv0) qv0 = vv;
+            if (uu > qu1) qu1 = uu;
+            if (vv > qv1) qv1 = vv;
+        }
+        if (qx1 - qx0 < 1e-5f && qy1 - qy0 < 1e-5f) continue;   // 退化
+        GeneratorBlock::GeoQuad gq;
+        gq.half[0] = (qx1 - qx0) * 0.5f;
+        gq.half[1] = (qy1 - qy0) * 0.5f;
+        gq.center[0] = (qx1 + qx0) * 0.5f;
+        gq.center[1] = (qy1 + qy0) * 0.5f;
+        gq.uv[0] = qu0; gq.uv[1] = qv0; gq.uv[2] = qu1; gq.uv[3] = qv1;
+        g.geoQuads.push_back(gq);
+    }
+
     // 妥当性ガード: 極端な値を弾く（未解析領域を頂点として読んだ場合の破綻防止）
     const bool sane = (ex >= 0.01f && ex <= 20.0f) &&
                       (ey >= -1.0f && ey <= 20.0f) &&
