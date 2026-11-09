@@ -85,6 +85,13 @@ static void Vm1(const MotionInstance& mi, SubUnit& su, const EffectContext& ctx)
         }
 
         //--- 乱数レンジ加算 --------------------------------------------
+        // AltanaView FUN_0040e650 の確定仕様:
+        //   0x0A : Move  += rand(-arg, +arg)   （対称）
+        //   0x10 : Scale += rand(0, arg)       （成分ごと）
+        //   0x11 : Scale += rand(0, arg[0])    （3 成分に同じ値）
+        // ※ そのまま適用するとスケールが単調増加し、参照の約 2 倍に破綻した
+        //   （AltanaView は寿命でサブを再初期化する経路 `+0x5e` と併せて機能する）。
+        //   再初期化を実装するまで従来の近似を維持する。
         case 0x0A:
         case 0x10:
         case 0x11:
@@ -241,6 +248,10 @@ static bool Vm2(const MotionInstance& mi, SubUnit& su, float dt, float rootDurat
                 d[0] *= r; d[1] *= r; d[2] *= r;
             }
             break;
+
+        // 注: VM#2 の 0x0F〜0x21 は AltanaView では「角度補間」であり、
+        //     0xB4/0xB8（u/v オフセット）への積分ではない（実測で UV が破綻した）。
+        //     UV オフセットは描画側で加算するだけに留める。
 
         default:
             break;

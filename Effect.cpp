@@ -52,6 +52,8 @@ static bool ParseTexFrames(const DatFile& dat, const char* name4, std::vector<Te
         f.u0 = f.v0 = f.x0 = f.y0 =  1e9f;
         f.u1 = f.v1 = f.x1 = f.y1 = -1e9f;
 
+        float csum[3] = { 0.0f, 0.0f, 0.0f };
+
         for (uint32_t v = 0; v < 6; ++v)
         {
             float q[6] = {};
@@ -64,7 +66,17 @@ static bool ParseTexFrames(const DatFile& dat, const char* name4, std::vector<Te
             if (q[1] < f.y0) f.y0 = q[1];
             if (q[0] > f.x1) f.x1 = q[0];
             if (q[1] > f.y1) f.y1 = q[1];
+
+            // 頂点色（D3DCOLOR = 0xAARRGGBB）。AltanaView は (v * inst) >> 7 = ×2/255
+            const uint8_t* cb = reinterpret_cast<const uint8_t*>(p + data + v * 24 + 12);
+            csum[0] += cb[2] / 128.0f;   // R
+            csum[1] += cb[1] / 128.0f;   // G
+            csum[2] += cb[0] / 128.0f;   // B
         }
+
+        f.cr = csum[0] / 6.0f;
+        f.cg = csum[1] / 6.0f;
+        f.cb = csum[2] / 6.0f;
 
         out.push_back(f);
         pos = data + cnt * 0x90;
