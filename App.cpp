@@ -418,7 +418,7 @@ static void RenderScene(bool present)
         ID3D11ShaderResourceView* srv = g_NoTexture ? nullptr : mi.srv;
         if (!g_NoTexture && srv == nullptr) srv = g_Effect.TextureSrv(texIdx);
 
-        GfxDrawQuad(center, axisR, axisU, rgba, srv);
+        GfxDrawQuad(center, axisR, axisU, rgba, mi.uv, srv);
 
         if (g_TraceFile != nullptr)
         {
@@ -973,8 +973,9 @@ static int RunSelfTest(const char* path)
 
     for (const GeneratorBlock& g : eff.Generators())
     {
-        fprintf(fp, "  gen %s type=0x%02X size=%u id=%u frames=%u length=%.4fs tblB=0x%X tblC=0x%X\n",
-                g.chunk.name, g.chunk.type, g.chunk.size, g.id, g.frames, g.Length(), g.tblB, g.tblC);
+        fprintf(fp, "  gen %s type=0x%02X size=%u id=%u frames=%u length=%.4fs tblB=0x%X tblC=0x%X frm=%zu%s\n",
+                g.chunk.name, g.chunk.type, g.chunk.size, g.id, g.frames, g.Length(), g.tblB, g.tblC,
+                g.texFrames.size(), g.HasFrames() ? "" : "(none)");
     }
 
     fprintf(fp, "timeline  = %zu insts, duration=%.4fs\n", eff.Timeline().size(), eff.Duration());
@@ -1008,10 +1009,11 @@ static int RunSelfTest(const char* path)
                 const float* s = mi.sub.At(SUB_SCALE);
                 const float* c = mi.sub.At(SUB_COLOR);
                 fprintf(fp,
-                        " | %s t=%.3f/%.3f pos=(%.3f,%.3f,%.3f) scl=(%.3f,%.3f,%.3f) col=(%.2f,%.2f,%.2f,%.2f) tex=%d link=%s",
+                        " | %s t=%.3f/%.3f pos=(%.3f,%.3f,%.3f) scl=(%.3f,%.3f,%.3f) col=(%.2f,%.2f,%.2f,%.2f) tex=%d link=%s uv=(%.3f,%.3f,%.3f,%.3f)",
                         mi.gen->chunk.name, mi.sub.Elapsed(), mi.gen->Length(),
                         p[0], p[1], p[2], s[0], s[1], s[2], c[0], c[1], c[2], c[3],
-                        mi.texIndex, mi.gen->linkName);
+                        mi.texIndex, mi.gen->linkName,
+                        mi.uv[0], mi.uv[1], mi.uv[2], mi.uv[3]);
             }
             fprintf(fp, "\n");
         }
@@ -1183,6 +1185,16 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
                 continue;
             }
 
+            if (_stricmp(tok, "--uv") == 0)
+            {
+                char mode[MAX_PATH] = {};
+                if (!NextToken(p, mode, MAX_PATH)) return 2;
+                if      (_stricmp(mode, "0x21") == 0) g_Effect.SetUseTexFrames(true);
+                else if (_stricmp(mode, "full") == 0) g_Effect.SetUseTexFrames(false);
+                else { Log("[shot] unknown uv: %s", mode); return 2; }
+                continue;
+            }
+
             if (dat[0] == 0) strncpy_s(dat, tok, _TRUNCATE);
             else             strncpy_s(png, tok, _TRUNCATE);
         }
@@ -1216,9 +1228,10 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
             const float* pp = mi.sub.At(SUB_POS);
             const float* ss = mi.sub.At(SUB_SCALE);
             const float* cc = mi.sub.At(SUB_COLOR);
-            Log("[shot] inst %s pos=(%.2f,%.2f,%.2f) scl=(%.2f,%.2f,%.2f) col=(%.2f,%.2f,%.2f,%.2f) tex=%d link=%s srv=%p",
+            Log("[shot] inst %s pos=(%.2f,%.2f,%.2f) scl=(%.2f,%.2f,%.2f) col=(%.2f,%.2f,%.2f,%.2f) tex=%d link=%s uv=(%.3f,%.3f,%.3f,%.3f) frm=%d/%zu srv=%p",
                 mi.gen->chunk.name, pp[0], pp[1], pp[2], ss[0], ss[1], ss[2],
-                cc[0], cc[1], cc[2], cc[3], mi.texIndex, mi.gen->linkName, (void*)mi.srv);
+                cc[0], cc[1], cc[2], cc[3], mi.texIndex, mi.gen->linkName,
+                mi.uv[0], mi.uv[1], mi.uv[2], mi.uv[3], mi.frameIdx, mi.gen->texFrames.size(), (void*)mi.srv);
         }
 
         RenderScene(false);                     // Present せずに描画
@@ -1227,8 +1240,9 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
         MultiByteToWideChar(CP_ACP, 0, png, -1, wpng, MAX_PATH);
         const bool ok = GfxSaveBackBufferPNG(wpng);
 
-        Log("[shot] dat=%s png=%s blend=%s inst=%zu tex=%zu ok=%d",
+        Log("[shot] dat=%s png=%s blend=%s uvmode=%s inst=%zu tex=%zu ok=%d",
             dat, png, GfxBlendModeName(GfxGetBlendMode()),
+            g_Effect.UseTexFrames() ? "0x21" : "full",
             g_Effect.Instances().size(), g_Effect.Textures().size(), ok ? 1 : 0);
 
         g_Effect.ReleaseTextures();

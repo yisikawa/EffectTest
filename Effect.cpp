@@ -5,6 +5,62 @@
 //======================================================================
 //  MotionInstance
 //======================================================================
+//----------------------------------------------------------------------
+//  0x21（テクスチャフレーム）のパース
+//
+//    +0x12 : u16 フレーム数
+//    +0x14 : 0 以外ならエントリヘッダが 0x14 バイト（既定 4）
+//    +0x28 : エントリ列。各エントリ = ヘッダ + cnt × 0x90 バイト
+//            ヘッダ +2 が cnt。0x90 = 6 頂点 × 24 B（x,y,z,color,u,v）
+//----------------------------------------------------------------------
+static bool ParseTexFrames(const DatFile& dat, const char* name4, std::vector<TexFrame>& out)
+{
+    out.clear();
+    if (name4 == nullptr || name4[0] == '\0') return false;
+
+    const DatChunk* c = dat.Find(name4, 0x21);
+    if (c == nullptr || c->size < 0x28 || !dat.InRange(c->offset, c->size)) return false;
+
+    const uint8_t* p = dat.At(c->offset);
+    if (p == nullptr) return false;
+
+    uint16_t entries = 0;
+    memcpy(&entries, p + 0x12, 2);
+    const uint32_t hdr = (p[0x14] != 0) ? 0x14u : 4u;
+
+    uint32_t pos = 0x28;
+    for (uint16_t e = 0; e < entries; ++e)
+    {
+        if (pos + hdr + 4 > c->size) break;
+
+        const uint32_t cnt  = p[pos + 2];
+        const uint32_t data = pos + hdr;
+        if (cnt == 0 || data + 0x90 > c->size) { pos = data; continue; }
+
+        TexFrame f;
+        f.u0 = f.v0 = f.x0 = f.y0 =  1e9f;
+        f.u1 = f.v1 = f.x1 = f.y1 = -1e9f;
+
+        for (uint32_t v = 0; v < 6; ++v)
+        {
+            float q[6] = {};
+            memcpy(q, p + data + v * 24, 24);
+            if (q[4] < f.u0) f.u0 = q[4];
+            if (q[5] < f.v0) f.v0 = q[5];
+            if (q[4] > f.u1) f.u1 = q[4];
+            if (q[5] > f.v1) f.v1 = q[5];
+            if (q[0] < f.x0) f.x0 = q[0];
+            if (q[1] < f.y0) f.y0 = q[1];
+            if (q[0] > f.x1) f.x1 = q[0];
+            if (q[1] > f.y1) f.y1 = q[1];
+        }
+
+        out.push_back(f);
+        pos = data + cnt * 0x90;
+    }
+    return !out.empty();
+}
+
 void MotionInstance::Reset(const DatFile* d, const GeneratorBlock* g, float start, int tex, int op)
 {
     dat       = d;
@@ -13,6 +69,11 @@ void MotionInstance::Reset(const DatFile* d, const GeneratorBlock* g, float star
     expired   = false;
     texIndex  = tex;
     spawnOp   = op;
+
+    // 0x21 のフレーム矩形（先頭フレームで初期化。実際の適用は Eval が
+    // EffectContext::UseTexFrames() を見て決める）
+    frameIdx = 0;
+    uv[0] = 0.0f; uv[1] = 0.0f; uv[2] = 1.0f; uv[3] = 1.0f;
 
     sub.Clear();
     sub.Elapsed() = 0.0f;
@@ -78,6 +139,9 @@ bool EffectContext::BuildInternal(const DatFile& dat, const char* mainChunkName)
             memcpy(g.linkName, p + 0xAC, 4);
             g.linkName[4] = '\0';
         }
+
+        // 同名の 0x21（テクスチャフレーム）があれば UV 矩形を取り込む
+        ParseTexFrames(dat, g.linkName, g.texFrames);
 
         uint32_t o = 0;
         memcpy(&o, p + 0x80, 4); g.tblA = g.payloadOff + (o - 0x90);

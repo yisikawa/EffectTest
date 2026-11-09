@@ -137,7 +137,7 @@ EffectTest.exe --action "<DAT>" vatk           # 指定アクションの命令�
 EffectTest.exe --selftest "<DAT>"              # Effect としてのタイムライン検証
 ```
 
-- `--selftest` は **`prog=0x50`**（命令列の開始位置）と、各インスタンス行の **`tex=`**（`+0xAC` から解決した `0x20` の番号）・**`link=`**（`+0xAC` の 4 文字名）を出力します。`tex=-1` は `0x1F`/`0x21`/`0x3D` を指す generator では正常（白）。**base（`ROM\0\0.DAT`）の `0x20` は `--shot` で `srv=` が非 0 になることで確認**できます。
+- `--selftest` は **`prog=0x50`**（命令列の開始位置）と、各インスタンス行の **`tex=`**（`+0xAC` から解決した `0x20` の番号）・**`link=`**（`+0xAC` の 4 文字名）・**`uv=(u0,v0,u1,v1)`** を出力します。generator 行には **`frm=N`**（同名 `0x21` のフレーム数。無ければ `frm=0(none)`）が出ます。`tex=-1` は `0x1F`/`0x21`/`0x3D` を指す generator では正常（白）。**base（`ROM\0\0.DAT`）の `0x20` は `--shot` で `srv=` が非 0 になることで確認**できます。
 - 出力ファイルは**上書き**ですが、実行直後の読み取りは競合することがあるため、`Start-Sleep -Milliseconds 300` を挟むか `file      = ...` 行で対象 DAT を確認してください。
 - 必要資源（generator / texture / base）はアプリ非依存の `tools\EffectRes.ps1` で算出できます（`[res] SUMMARY ...`）。
 - **入れ子 Schedule**: `op 0x03` の名前が `0x07` を指す場合、その Schedule を並行実行します（`--selftest` の **`subtl    = N`**）。例: `12\43` の `main` は `hit1` を起動（`subtl = 1`）。
@@ -269,7 +269,8 @@ next < 16 で終端 / pos += next
 | VM#2 `0x0F..0x21`, `0x25`, `0x27/0x28`, `0x2C`, `0x33/0x34-0x37/0x46` | 未実装（IP 前進のみ or 部分実装） |
 | `FUN_0040f820` キーフレーム補間 | 未実装（`0x4F` はテーブル直読みで代替） |
 | `0x1F`（`f101.m`）ジオメトリ | **未解析・未使用**（本ツールはビルボード描画） |
-| `0x19` / `0x21` / `0x3D` ブロック | 未使用（チャンク索引には載る） |
+| `0x19` / `0x3D` ブロック | 未使用（チャンク索引には載る） |
+| `0x21`（テクスチャフレーム） | パース済み（`frm=` / `uv=`）。UV の適用は `--uv 0x21`（実験的・既定 `full`） |
 | タイムライン `0x05`（モデル生成） | 未実装（別 DAT の読み込みが必要） |
 | 描画の厳密な設定 | 加算合成 + Z 書き込みなしで**仮定**（AltanaView の実設定は未確認） |
 | テクスチャ選択 | DAT 内の 0x20 を順に列挙し `1`〜`9` で切替（元の割当規則は未確定） |
@@ -352,6 +353,7 @@ AltanaView の `SetRenderState` を静的に走査すると、エフェクト描
 
 - GUI: `M` キーで巡回。現在のモードはタイトルとログ `[blend] <mode>` に出ます
 - ヘッドレス: `--shot --blend alpha_add|add|alpha "<dat>" out.png`（`[shot] … blend=<mode>` を出力）
+- テクスチャフレーム: `--shot --uv 0x21 "<dat>" out.png`（`[shot] … uvmode=0x21`。既定は `uvmode=full`）
 - 画素統計: `powershell -NoProfile -ExecutionPolicy Bypass -File tools\ShotStats.ps1 -Path out_fire.png`
   → `sampled=57600 nonBg=7950 maxSum=686`
 
@@ -363,7 +365,8 @@ AltanaView の `SetRenderState` を静的に走査すると、エフェクト描
 | `12\43`（Foe Requiem） | 13,150 / 765 | **13,150 / 560** | 13,150 / 469 |
 
 > `12\43` で見える**チェッカー模様の板**は、テクスチャアトラスの全面をそのまま貼っているためです
-> （`0x21` のフレーム／UV 未適用）。合成ではなく UV の問題として次段で扱います。
+> `0x21` のフレーム／UV はパース済みで、`--uv 0x21` で適用できます（既定は `full`）。
+> `12\43` には `0x21` が無いため、この指定でも表示は変わりません。
 
 
 

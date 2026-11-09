@@ -18,10 +18,18 @@ void GfxBeginFrame(const float rgba[4]);
 void GfxEndFrame();
 
 // center / axisRight / axisUp はワールド空間ベクトル（axis は半幅・半高を含む）
+// uvRect = (u0,v0,u1,v1)。nullptr ならテクスチャ全面。
 void GfxDrawQuad(const float center[3],
                  const float axisRight[3],
                  const float axisUp[3],
                  const float rgba[4],
+                 ID3D11ShaderResourceView* srv);
+
+void GfxDrawQuad(const float center[3],
+                 const float axisRight[3],
+                 const float axisUp[3],
+                 const float rgba[4],
+                 const float uvRect[4],
                  ID3D11ShaderResourceView* srv);
 
 //------------------------------------------------------------------

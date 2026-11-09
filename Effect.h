@@ -85,6 +85,19 @@ struct TimelineInst
 };
 
 //----------------------------------------------------------------------
+// テクスチャフレーム（type 0x21）
+//
+//  0x21 ブロック = ヘッダ + N フレーム。各フレームは 6 頂点 × 24 B の
+//  クワッド（x, y, z, color(BGRA), u, v）を 1 個以上持つ。
+//  ここでは UV 矩形とローカル座標の範囲だけを保持する。
+//----------------------------------------------------------------------
+struct TexFrame
+{
+    float u0 = 0.0f, v0 = 0.0f, u1 = 1.0f, v1 = 1.0f;   // 正規化 UV 矩形
+    float x0 = 0.0f, y0 = 0.0f, x1 = 0.0f, y1 = 0.0f;   // ローカル座標の範囲（参考）
+};
+
+//----------------------------------------------------------------------
 // ジェネレータ（type 0x05）
 //----------------------------------------------------------------------
 struct GeneratorBlock
@@ -98,6 +111,9 @@ struct GeneratorBlock
     uint8_t  count    = 0;      // +0x78
     uint8_t  flag     = 0;      // +0x79
     char     linkName[5] = {};  // +0xAC の 4 文字リンク名（0x20/0x1F/0x21/0x3D/base/予約語）
+    std::vector<TexFrame> texFrames;   // 同名の 0x21 があればそのフレーム列（無ければ空）
+
+    inline bool HasFrames() const { return !texFrames.empty(); }
 
     inline float Length() const { return (frames + 1) * (1.0f / 60.0f); }
 };
@@ -115,6 +131,8 @@ struct MotionInstance
     int                   texIndex  = -1;
     ID3D11ShaderResourceView* srv   = nullptr;   // 借用（ローカル 0x20 または base の 0x20）
     int                   spawnOp   = 2;
+    float                 uv[4]     = { 0.0f, 0.0f, 1.0f, 1.0f };   // 0x21 のフレーム矩形
+    int                   frameIdx  = 0;                             // 現在のフレーム番号
 
     void Reset(const DatFile* d, const GeneratorBlock* g, float start, int tex, int op);
     void Eval(const class EffectContext& ctx, float dt);
@@ -145,6 +163,10 @@ public:
     const std::vector<GeneratorBlock>& Generators() const { return m_Generators; }
     const std::vector<MotionInstance>& Instances()  const { return m_Instances; }
     const std::vector<TimTexture>&     Textures()   const { return m_Textures; }
+
+    // 0x21（テクスチャフレーム）の UV 適用（実験的・既定 OFF）
+    void SetUseTexFrames(bool on) { m_UseTexFrames = on; }
+    bool UseTexFrames() const { return m_UseTexFrames; }
 
     uint32_t ProgStart() const { return m_ProgStart; }
     size_t   Ip()       const { return m_Ip; }
@@ -200,6 +222,7 @@ private:
     bool     m_Loop     = true;
     float    m_Speed    = 1.0f;
     uint8_t  m_LastColor[4] = { 255, 255, 255, 255 };
+    bool     m_UseTexFrames = false;    // 0x21 の UV 適用（実験的）
 
     TimTexture m_WhiteTex;
 };

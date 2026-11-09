@@ -197,6 +197,27 @@ Expected（`[shot] … blend=<mode>` が指定どおり）:
 
 `--blend` を省略したとき `blend=alpha_add` になること（`11\18` = 3,701、`11\22` = 6,596、`12\43` = 13,150 / maxSum 560）。
 
+### V-14 テクスチャフレーム（T-15 / T-16）
+
+```powershell
+$exe = (Resolve-Path '.\x64\Release\EffectTest.exe').Path
+$dat = 'C:\Program Files (x86)\PlayOnline\SquareEnix\FINAL FANTASY XI\ROM\11\17.DAT'
+Start-Process -FilePath $exe -ArgumentList @('--selftest', ('"' + $dat + '"')) -Wait
+Select-String -Path effecttest_selftest.txt -Pattern 'frm='
+```
+Expected（`0x21` のフレーム数が generator 行に出る）:
+- `g004` / `g001` = **`frm=16`**（`fai0` の 16 フレーム）
+- `g000` / `g002` = **`frm=1`**（`fai1` / `fai2`）
+- それ以外 = `frm=0(none)`
+
+```powershell
+$out = 'out_f18_uv21.png'
+Start-Process -FilePath $exe -ArgumentList @('--shot','--uv','0x21', ('"' + $dat.Replace('11\17','11\18') + '"'), $out) -Wait
+Select-String -Path effecttest_log.txt -Pattern '^\[shot\] dat='
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\ShotStats.ps1 -Path $out
+```
+Expected: `uvmode=0x21`、非背景 **2,947** / maxSum 725（既定 `--uv full` は 3,701）。`12\43` は `0x21` を持たないため `full` と同じ 13,150。
+
 ## 5. ゴールデン表（数値の根拠）
 
 | 指標 | 値 |
@@ -242,10 +263,11 @@ Expected（`[shot] … blend=<mode>` が指定どおり）:
 | V-11（Phase 2） | ✅ | `--shot` で `[base] … tex=61 load_ms=4`、`g006 link=hit6 srv≠0` / `g005 link=hi17 srv≠0`（base の `0x20` を借用）。`gs00`(0x3D)・`g003`(0x1F) は `srv=0`（白）で正常 |
 | V-12（入れ子） | ✅ | `12\43`: `subtl = 1`（`main`→`hit1`）、`timeline = 9 insts`、`--shot` で `inst=8 ok=1`・非背景 **13,150**（修正前は main 単体で 0） |
 | V-13（合成） | ✅ | 既定 `blend=alpha_add`。Fire 非背景 7,950 / maxSum 686（`add`=8,206/765、`alpha`=6,516/639）。`12\43` は 13,150 / 560 |
+| V-14（0x21） | ✅ | `frm=` が `g004`/`g001`=16、`g000`/`g002`=1、他 0(none)。`--uv 0x21` で Fire II 3,701→**2,947**、Fire 7,950→7,968、Blizzard/`12\43` は不変 |
 | V-09 | 未実施 | GUI のクリック操作（手動） |
 | V-10 | ✅ | `groups=29` / `NPC ROM1 items=1266` |
 
-→ **自動検証 13 項目中 12 合格・1 未実施（V-09 の GUI 操作のみ手動）**。`--shot` の画素は 4px 間引き 57,600 点中の非背景数。
+→ **自動検証 14 項目中 13 合格・1 未実施（V-09 の GUI 操作のみ手動）**。`--shot` の画素は 4px 間引き 57,600 点中の非背景数。
 
 
 ## 8. 制約・再現性

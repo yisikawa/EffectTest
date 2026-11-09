@@ -20,6 +20,7 @@ struct CBData
     XMFLOAT4   axisR;
     XMFLOAT4   axisU;
     XMFLOAT4   color;
+    XMFLOAT4   uv;          // uvRect = (u0, v0, u1, v1)。0x21 のフレーム矩形
 };
 
 static const char* kShader =
@@ -30,7 +31,11 @@ static const char* kShader =
 "    float4   gAxisR;\n"
 "    float4   gAxisU;\n"
 "    float4   gColor;\n"
+"    float4   gUv;\n"
+
 "};\n"
+
+
 "Texture2D    gTex : register(t0);\n"
 "SamplerState gSmp : register(s0);\n"
 "struct VSOut { float4 pos : SV_POSITION; float2 uv : TEXCOORD0; float4 col : COLOR0; };\n"
@@ -42,7 +47,7 @@ static const char* kShader =
 "    float3 wp = gCenter.xyz + gAxisR.xyz * t.x + gAxisU.xyz * t.y;\n"
 "    VSOut o;\n"
 "    o.pos = mul(float4(wp, 1.0), gViewProj);\n"
-"    o.uv  = float2((t.x + 1.0) * 0.5, 1.0 - (t.y + 1.0) * 0.5);\n"
+"    o.uv  = gUv.xy + float2((t.x + 1.0) * 0.5, 1.0 - (t.y + 1.0) * 0.5) * (gUv.zw - gUv.xy);\n"
 "    o.col = gColor;\n"
 "    return o;\n"
 "}\n"
@@ -352,6 +357,13 @@ void GfxEndFrame()
 void GfxDrawQuad(const float center[3], const float axisRight[3], const float axisUp[3],
                  const float rgba[4], ID3D11ShaderResourceView* srv)
 {
+    GfxDrawQuad(center, axisRight, axisUp, rgba, nullptr, srv);
+}
+
+// uvRect = (u0, v0, u1, v1)。nullptr ならテクスチャ全面 (0,0,1,1)。
+void GfxDrawQuad(const float center[3], const float axisRight[3], const float axisUp[3],
+                 const float rgba[4], const float uvRect[4], ID3D11ShaderResourceView* srv)
+{
     if (g_Context == nullptr || g_CB == nullptr) return;
 
     D3D11_MAPPED_SUBRESOURCE mapped = {};
@@ -364,6 +376,8 @@ void GfxDrawQuad(const float center[3], const float axisRight[3], const float ax
     cb->axisR  = XMFLOAT4(axisRight[0], axisRight[1], axisRight[2], 0.0f);
     cb->axisU  = XMFLOAT4(axisUp[0], axisUp[1], axisUp[2], 0.0f);
     cb->color  = XMFLOAT4(rgba[0], rgba[1], rgba[2], rgba[3]);
+    cb->uv     = (uvRect != nullptr) ? XMFLOAT4(uvRect[0], uvRect[1], uvRect[2], uvRect[3])
+                                     : XMFLOAT4(0.0f, 0.0f, 1.0f, 1.0f);
 
     g_Context->Unmap(g_CB, 0);
 

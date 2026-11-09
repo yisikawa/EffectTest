@@ -264,5 +264,20 @@ void MotionInstance::Eval(const EffectContext& ctx, float dt)
 
     Vm1(*this, ctx);
     Vm2(*this, dt, ctx.Duration());
+
+    //--------------------------------------------------------------
+    // 0x21 のフレーム（テクスチャアトラス）: 60 fps で進め、末尾でループ
+    //--------------------------------------------------------------
+    if (gen->HasFrames() && ctx.UseTexFrames())
+    {
+        const int n = (int)gen->texFrames.size();
+        int idx = (int)(sub.Elapsed() * 60.0f);
+        if (idx < 0) idx = 0;
+        idx %= n;
+
+        frameIdx = idx;
+        const TexFrame& f = gen->texFrames[idx];
+        uv[0] = f.u0; uv[1] = f.v0; uv[2] = f.u1; uv[3] = f.v1;
+    }
 }
 

@@ -75,6 +75,7 @@
 | T-12 | `--list` | `groups=29`、NPC ROM1 = **1,266 件** | ○ |
 | T-13 | `--selftest "…\12\43.DAT"` | `subtl    = 1`、`timeline  = 9 insts, duration=2.6667s` | ○ |
 | T-14 | `--shot --blend add|alpha_add|alpha …\11\17.DAT` | `blend=` が指定どおり。maxSum が **765 / 686 / 639**（`add` のみ白飛び） | △（GPU 必須） |
+| T-15 | `--selftest "…\11\17.DAT"` → gen 行の `frm=` | `g004`/`g001` = **`frm=16`**、`g000`/`g002` = **`frm=1`**、他は `frm=0(none)` | ○ |
 
 ### T3 描画
 
@@ -82,6 +83,7 @@
 |---|---|---|---|
 | T-09 | `--shot "…\11\17.DAT" out_fire.png` | `[shot] ... blend=alpha_add inst=8 tex=5 ok=1`、非背景 **7,950** / maxSum **686**（4px 間引き 57,600 点） | △（GPU 必須） |
 | T-09b | `--shot "…\11\18.DAT" out_fire2.png` | `ok=1` ＆ 非背景 **3,701** / maxSum 725（修正前は 0） | △ |
+| T-16 | `--shot --uv 0x21 "…\11\18.DAT"` | `uvmode=0x21`、非背景 **2,947** / maxSum 725（既定 `full` は 3,701） | △ |
 
 ### T4 UI 手動
 
