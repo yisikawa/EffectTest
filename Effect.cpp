@@ -1,6 +1,7 @@
 ﻿#include "Effect.h"
 #include "EffectBase.h"
 #include <cmath>
+#include <algorithm>
 
 //======================================================================
 //  MotionInstance
@@ -132,6 +133,7 @@ static bool ParseGeometry(const DatFile& dat, const char* name4, GeneratorBlock&
 
     // UV は half（実測: `fire` の 4 隅 = (1.871,0)/(1.871,1.871)/(0,0)/(0,1.871)）
     //   +0x1C = u / +0x20 = v（float32 ではない）
+    bool axisDisabled[3] = { false, false, false };
     struct Vtx { float x, y, z, u, v; };
     auto ReadVtx = [&](uint32_t idx, Vtx& o)
     {
@@ -145,6 +147,31 @@ static bool ParseGeometry(const DatFile& dat, const char* name4, GeneratorBlock&
         o.x = half2f(hx); o.y = half2f(hy); o.z = half2f(hz);
         o.u = half2f(hu); o.v = half2f(hv);
     };
+
+    // 未初期化成分の判定:
+    //   285 チャンクを実測すると、ある軸にだけ |値|>=100 の異常値が混入する
+    //   （`syur` y: 90/144 = 63%、`ic` y: 16/90 = 18%、`m1` y: 10/12 = 83%、
+    //     `fire` y: 0/6）。1 軸の異常率が 30% を超えるチャンクは、
+    //   その軸が「書かれていない（未初期化）」と判断して 0 固定にする
+    {
+        const uint32_t axes[3] = { 0x00u, 0x02u, 0x04u };
+        for (int axis = 0; axis < 3; ++axis)
+        {
+            uint32_t junk = 0;
+            for (uint32_t i = 0; i < verts; ++i)
+            {
+                const uint8_t* q = p + start + i * stride + axes[axis];
+                uint16_t h = 0;
+                memcpy(&h, q, 2);
+                const float v = half2f(h);
+                if (!(v > -100.0f && v < 100.0f)) ++junk;
+            }
+            if (verts > 0 && (float)junk / (float)verts > 0.30f)
+            {
+                axisDisabled[axis] = true;
+            }
+        }
+    }
 
     // 6 頂点（2 三角形）ごとに 1 枚の平行四辺形を作る
     //   A=v0, B=v1, C=v2 の 3 頂点から平面を作る（A' = B + C - A）
@@ -160,13 +187,41 @@ static bool ParseGeometry(const DatFile& dat, const char* name4, GeneratorBlock&
         ReadVtx(s + 4, E);
         ReadVtx(s + 5, F);
 
-        auto ok = [](const Vtx& t)
+        auto ok = [](float v) { return (v > -100.0f && v < 100.0f); };
+
+        // 未初期化成分（|v|>1000）は、同じクワッド内の有効値の中央値で補う
+        //   実測: 285 チャンク中 71 で 1 軸に異常値が混入（例: `syur` y=6.1e4 が 84/144 個）
+        Vtx vs[6] = { A, B, C, D, E, F };
+        for (int k = 0; k < 6; ++k)
         {
-            return (t.x > -1000.0f && t.x < 1000.0f &&
-                    t.y > -1000.0f && t.y < 1000.0f &&
-                    t.z > -1000.0f && t.z < 1000.0f);
-        };
-        if (!ok(A) || !ok(B) || !ok(C)) continue;
+            if (axisDisabled[0]) vs[k].x = 0.0f;
+            if (axisDisabled[1]) vs[k].y = 0.0f;
+            if (axisDisabled[2]) vs[k].z = 0.0f;
+        }
+        float med[3] = { 0.0f, 0.0f, 0.0f };
+        for (int axis = 0; axis < 3; ++axis)
+        {
+            if (axisDisabled[axis]) continue;
+            float tmp[6];
+            int n = 0;
+            for (int k = 0; k < 6; ++k)
+            {
+                const float val = (axis == 0) ? vs[k].x : (axis == 1) ? vs[k].y : vs[k].z;
+                if (ok(val)) tmp[n++] = val;
+            }
+            if (n > 0)
+            {
+                std::sort(tmp, tmp + n);
+                med[axis] = tmp[n / 2];
+            }
+        }
+        for (int k = 0; k < 6; ++k)
+        {
+            if (!axisDisabled[0] && !ok(vs[k].x)) vs[k].x = med[0];
+            if (!axisDisabled[1] && !ok(vs[k].y)) vs[k].y = med[1];
+            if (!axisDisabled[2] && !ok(vs[k].z)) vs[k].z = med[2];
+        }
+        A = vs[0]; B = vs[1]; C = vs[2];
 
         const float rx = (B.x - A.x) * 0.5f, ry = (B.y - A.y) * 0.5f, rz = (B.z - A.z) * 0.5f;
         const float ux = (C.x - A.x) * 0.5f, uy = (C.y - A.y) * 0.5f, uz = (C.z - A.z) * 0.5f;
