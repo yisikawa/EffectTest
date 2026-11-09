@@ -56,11 +56,18 @@ static void Vm1(const MotionInstance& mi, SubUnit& su, const EffectContext& ctx)
             if (d) { d[0] = arg[0]; d[1] = arg[1]; d[2] = arg[2]; }
             break;
 
-        //--- 定数 float3 → MOVE スロット --------------------------------
+        //--- 定数 float3 → MOVE スロット（実測 FUN_0040e650: param_2[0x23..0x25]）
         case 0x09:
-        case 0x0F:
         {
             float* t = su.sub.Move();
+            t[0] = arg[0]; t[1] = arg[1]; t[2] = arg[2];
+            break;
+        }
+
+        //--- 定数 float3 → SCALE スロット（実測: param_2[0x26..0x28] = 0x98 = Scale）
+        case 0x0F:
+        {
+            float* t = su.sub.Scale();
             t[0] = arg[0]; t[1] = arg[1]; t[2] = arg[2];
             break;
         }
@@ -93,19 +100,33 @@ static void Vm1(const MotionInstance& mi, SubUnit& su, const EffectContext& ctx)
 
         //--- 乱数レンジ加算 --------------------------------------------
         // AltanaView FUN_0040e650 の確定仕様:
-        //   0x0A : Move  += rand(-arg, +arg)   （対称）
-        //   0x10 : Scale += rand(0, arg)       （成分ごと）
+        //   0x0A : Move  += rand(-arg, +arg)   （対称・成分ごとに独立）
+        //          実測: `(arg - (-arg)) * r + (-arg) + d` = arg*(2r-1) + d
+        //   0x10 : Scale += rand(0, arg)       （成分ごとに独立）
         //   0x11 : Scale += rand(0, arg[0])    （3 成分に同じ値）
-        // ※ そのまま適用するとスケールが単調増加し、参照の約 2 倍に破綻した
-        //   （AltanaView は寿命でサブを再初期化する経路 `+0x5e` と併せて機能する）。
-        //   再初期化を実装するまで従来の近似を維持する。
+        // ※ 0x10/0x11 は AltanaView ではサブ再初期化（+0x5e）と併せて機能するため、
+        //   再初期化を実装するまでは従来の近似を維持する。
         case 0x0A:
+        {
+            float* t = su.sub.Move();
+            t[0] += arg[0] * (Rand01() * 2.0f - 1.0f);
+            t[1] += arg[1] * (Rand01() * 2.0f - 1.0f);
+            t[2] += arg[2] * (Rand01() * 2.0f - 1.0f);
+            break;
+        }
         case 0x10:
+        {
+            float* t = su.sub.Scale();
+            t[0] += arg[0] * Rand01();
+            t[1] += arg[1] * Rand01();
+            t[2] += arg[2] * Rand01();
+            break;
+        }
         case 0x11:
         {
-            float* t = (op == 0x11) ? su.sub.Scale() : su.sub.Move();
+            float* t = su.sub.Scale();
             const float r = Rand01();
-            t[0] += arg[0] * r; t[1] += arg[1] * r; t[2] += arg[2] * r;
+            t[0] += arg[0] * r; t[1] += arg[0] * r; t[2] += arg[0] * r;
             break;
         }
 
@@ -151,10 +172,21 @@ static void Vm1(const MotionInstance& mi, SubUnit& su, const EffectContext& ctx)
             break;
         }
 
-        //--- 未確定（回転・補間系）: 出力スロットへ加算で近似 -----------
+        //--- 出力スロットへの対称乱数（実測: LAB_0040e8cb）
+        //   0x03 / 0x0C / 0x13 : dest[i] += rand(-arg[i], +arg[i])  （成分ごと独立）
         case 0x03:
-        case 0x08:
         case 0x0C:
+        case 0x13:
+            if (d)
+            {
+                d[0] += arg[0] * (Rand01() * 2.0f - 1.0f);
+                d[1] += arg[1] * (Rand01() * 2.0f - 1.0f);
+                d[2] += arg[2] * (Rand01() * 2.0f - 1.0f);
+            }
+            break;
+
+        //--- 未確定: 出力スロットへ加算で近似 ---------------------------
+        case 0x08:
         case 0x41:
             if (d) { d[0] += arg[0]; d[1] += arg[1]; d[2] += arg[2]; }
             break;
