@@ -1,4 +1,4 @@
-# EffectTest — FFXI エフェクト・モーション専用ビューア
+﻿# EffectTest — FFXI エフェクト・モーション専用ビューア
 
 `ModelTest` と同じ作法（Win32 + DirectX11 + フラット構成 + Visual Studio vcxproj）で作った、
 **AltanaView 0.6.2 の effect motion だけを再現・可視化する**独立アプリです。
@@ -380,7 +380,7 @@ AltanaView の `SetRenderState` を静的に走査すると、エフェクト描
 |---|---|---|---|
 | `11\17`（Fire） | 3,841 / 668 | 3,132 / 372 | **8,050 / 348** |
 | `11\18`（Fire II） | — | — | **2,694 / 576** |
-| `11\22`（Blizzard） | — | — | **7,179 / 238** |
+| `11\22`（Blizzard） | — | — | **7,317 / 238** |
 | `12\43`（Foe Requiem） | — | — | **10,729 / 244** |
 
 > `--uv full`（`0x21` を使わない）では Fire 8,033 / 348、Fire II 2,396 / 570。
