@@ -50,9 +50,10 @@ static const char* kShader =
 "{\n"
 "    float4 t = gTex.Sample(gSmp, i.uv);\n"
 "    // FFXI のエフェクト用テクスチャは RGB=0 で alpha に形状を持つものが多い。\n"
-"    // そのため「RGB と alpha の大きい方」を輝度として扱い、加算合成する。\n"
-"    float3 src = max(t.rgb, float3(t.a, t.a, t.a));\n"
-"    return float4(src * i.col.rgb * i.col.a * 1.5, 0.0);\n"
+"    // そのため「RGB と alpha の大きい方」を輝度として扱う。\n"
+"    float3 s = max(t.rgb, float3(t.a, t.a, t.a));\n"
+"    float  m = saturate(max(s.r, max(s.g, s.b)));   // 形状（ブレンド用 alpha）\n"
+"    return float4(s * i.col.rgb * i.col.a * 1.5, m * i.col.a);\n"
 "}\n";
 
 //----------------------------------------------------------------------
@@ -66,7 +67,8 @@ namespace
     ID3D11RenderTargetView*  g_RTV     = nullptr;
     ID3D11DepthStencilView*  g_DSV     = nullptr;
     ID3D11DepthStencilState* g_DSS     = nullptr;
-    ID3D11BlendState*        g_Blend   = nullptr;
+    ID3D11BlendState*        g_Blends[GFX_BLEND_COUNT] = {};
+    GfxBlendMode             g_BlendMode = GFX_BLEND_ALPHA_ADD;
     ID3D11RasterizerState*   g_Raster  = nullptr;
     ID3D11SamplerState*      g_Sampler = nullptr;
     ID3D11VertexShader*      g_VS      = nullptr;
@@ -146,18 +148,29 @@ bool GfxInit(HWND hwnd, int width, int height)
     if (FAILED(g_Device->CreateBuffer(&bd, nullptr, &g_CB))) return false;
 
     //--------------------------------------------------------------
-    // ステート（加算合成 / Z 書き込みなし）
+    // ステート（合成モード別 / Z 書き込みなし）
     //--------------------------------------------------------------
-    D3D11_BLEND_DESC blendDesc = {};
-    blendDesc.RenderTarget[0].BlendEnable           = TRUE;
-    blendDesc.RenderTarget[0].SrcBlend              = D3D11_BLEND_ONE;      // 加算（premultiplied）
-    blendDesc.RenderTarget[0].DestBlend             = D3D11_BLEND_ONE;
-    blendDesc.RenderTarget[0].BlendOp               = D3D11_BLEND_OP_ADD;
-    blendDesc.RenderTarget[0].SrcBlendAlpha         = D3D11_BLEND_ONE;
-    blendDesc.RenderTarget[0].DestBlendAlpha        = D3D11_BLEND_ONE;
-    blendDesc.RenderTarget[0].BlendOpAlpha          = D3D11_BLEND_OP_ADD;
-    blendDesc.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
-    if (FAILED(g_Device->CreateBlendState(&blendDesc, &g_Blend))) return false;
+    struct BlendPreset { D3D11_BLEND src; D3D11_BLEND dst; };
+    static const BlendPreset kBlendPresets[GFX_BLEND_COUNT] =
+    {
+        { D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_ONE           },   // GFX_BLEND_ALPHA_ADD
+        { D3D11_BLEND_ONE,       D3D11_BLEND_ONE           },   // GFX_BLEND_ADD
+        { D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_INV_SRC_ALPHA },   // GFX_BLEND_ALPHA
+    };
+
+    for (int i = 0; i < GFX_BLEND_COUNT; ++i)
+    {
+        D3D11_BLEND_DESC blendDesc = {};
+        blendDesc.RenderTarget[0].BlendEnable           = TRUE;
+        blendDesc.RenderTarget[0].SrcBlend              = kBlendPresets[i].src;
+        blendDesc.RenderTarget[0].DestBlend             = kBlendPresets[i].dst;
+        blendDesc.RenderTarget[0].BlendOp               = D3D11_BLEND_OP_ADD;
+        blendDesc.RenderTarget[0].SrcBlendAlpha         = D3D11_BLEND_ONE;
+        blendDesc.RenderTarget[0].DestBlendAlpha        = D3D11_BLEND_ONE;
+        blendDesc.RenderTarget[0].BlendOpAlpha          = D3D11_BLEND_OP_ADD;
+        blendDesc.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
+        if (FAILED(g_Device->CreateBlendState(&blendDesc, &g_Blends[i]))) return false;
+    }
 
     D3D11_DEPTH_STENCIL_DESC dsDesc = {};
     dsDesc.DepthEnable    = TRUE;
@@ -260,7 +273,10 @@ void GfxShutdown()
     if (g_VS)      { g_VS->Release();      g_VS = nullptr; }
     if (g_Sampler) { g_Sampler->Release(); g_Sampler = nullptr; }
     if (g_Raster)  { g_Raster->Release();  g_Raster = nullptr; }
-    if (g_Blend)   { g_Blend->Release();   g_Blend = nullptr; }
+    for (int i = 0; i < GFX_BLEND_COUNT; ++i)
+    {
+        if (g_Blends[i]) { g_Blends[i]->Release(); g_Blends[i] = nullptr; }
+    }
     if (g_DSS)     { g_DSS->Release();     g_DSS = nullptr; }
     if (g_DSV)     { g_DSV->Release();     g_DSV = nullptr; }
     if (g_RTV)     { g_RTV->Release();     g_RTV = nullptr; }
@@ -275,6 +291,28 @@ void GfxSetCamera(const XMMATRIX& view, const XMMATRIX& proj)
     // HLSL は cbuffer の行列を列優先として読むため、転置して渡す
     // （VS 側は mul(float4(world,1), gViewProj) で行ベクトル規約）
     g_ViewProj = XMMatrixMultiplyTranspose(view, proj);
+}
+
+//======================================================================
+//  合成モード
+//======================================================================
+void GfxSetBlendMode(GfxBlendMode mode)
+{
+    if (mode < 0 || mode >= GFX_BLEND_COUNT) return;
+    g_BlendMode = mode;
+}
+
+GfxBlendMode GfxGetBlendMode() { return g_BlendMode; }
+
+const char* GfxBlendModeName(GfxBlendMode mode)
+{
+    switch (mode)
+    {
+    case GFX_BLEND_ALPHA_ADD: return "alpha_add";
+    case GFX_BLEND_ADD:       return "add";
+    case GFX_BLEND_ALPHA:     return "alpha";
+    default:                  return "?";
+    }
 }
 
 //======================================================================
@@ -299,7 +337,7 @@ void GfxBeginFrame(const float rgba[4])
     g_Context->VSSetShader(g_VS, nullptr, 0);
     g_Context->PSSetShader(g_PS, nullptr, 0);
     g_Context->PSSetSamplers(0, 1, &g_Sampler);
-    g_Context->OMSetBlendState(g_Blend, nullptr, 0xFFFFFFFF);
+    g_Context->OMSetBlendState(g_Blends[g_BlendMode], nullptr, 0xFFFFFFFF);
     g_Context->OMSetDepthStencilState(g_DSS, 0);
     g_Context->RSSetState(g_Raster);
 }

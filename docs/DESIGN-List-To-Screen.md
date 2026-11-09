@@ -543,9 +543,35 @@ needed20 = { link(g) | g ∈ needed05 かつ link(g) が 0x20 }                 
 | 差分 | 内容 | 扱い |
 |---|---|---|
 | モデル非表示 | AltanaView は **キャラクター（PC/NPC モデル）＋エフェクト**を表示する（`Song12-43.gif` もモデル主体）。EffectTest はエフェクトのみ | P1（モデル描画）で解消予定 |
-| 合成 | EffectTest は**加算合成のみ**（`ONE/ONE`）。AltanaView は用途別にアルファ合成を使う | 未対応（要解析） |
-| `0x21` | テクスチャフレーム／UV アニメを適用していない（静止テクスチャのみ） | スコープ外（解析済み） |
+| 合成 | **解消（2026-11-09）**。AltanaView は `ALPHABLENDENABLE=1` / `SRCBLEND=SRCALPHA(5)` / `DESTBLEND=ONE(2)` / `ZWRITEENABLE=0` で描く（§4.8.6.1）。EffectTest は 3 モードを実装し既定を `alpha_add` に変更 | 対応済み |
+| テクスチャ UV | アトラス画像（チェッカー模様の板）がそのまま出る。`0x21` のフレーム／UV アニメを適用していない | 次段（要解析） |
 | prologue op | `0x01`/`0x20`/`0x23`/`0x0B`/`0x53` 等の意味が未確定で実行していない | 未対応（表示には不要な範囲あり） |
+
+#### 4.8.6.1 合成モードの根拠（AltanaView 実測）
+
+`AltanaView_unpacked.exe`（sha256 `b5494a7c…5cfae90`）の `IDirect3DDevice9::SetRenderState`（vtable `+0xE4`）呼び出しを静的に走査:
+
+| アドレス | 設定 | 意味 |
+|---|---|---|
+| `0x40b8b0` | `SetRenderState(27, 1)` | `D3DRS_ALPHABLENDENABLE = TRUE` |
+| `0x40b8ba` | `SetRenderState(19, 5)` | `D3DRS_SRCBLEND = D3DBLEND_SRCALPHA` |
+| `0x40b8c7` | `SetRenderState(20, 2)` | `D3DRS_DESTBLEND = D3DBLEND_ONE` |
+| `0x407fe1` | `SetRenderState(14, 0)` | `D3DRS_ZWRITEENABLE = FALSE` |
+| `0x407fe9`～`0x407ff3` | `SetRenderState(27,1)` → `(19,5)` → `(20,6)` | モデル／通常透過用（`INVSRCALPHA`） |
+
+- `SRCBLEND = ONE(2)` の設定は**存在しない** → 純加算（`ONE/ONE`）は AltanaView の描画経路ではない
+- 走査結果: `SRCALPHA` 3 箇所、`INVSRCALPHA` 2 箇所、`DESTBLEND=ONE` 2 箇所
+
+EffectTest 側は `GfxBlendMode`（`Gfx.h`）で 3 モードを保持し、既定を `GFX_BLEND_ALPHA_ADD`（`SRCALPHA/ONE`）とする。ピクセルシェーダは**非乗算色＋形状 alpha** を返し、ブレンド式に alpha を掛けさせる。
+
+実測（4px 間引き 57,600 点、`--blend` で切替）:
+
+| DAT | `add`（旧） | `alpha_add`（既定） | `alpha` |
+|---|---|---|---|
+| `11\17`（Fire） | 非背景 8,206 / maxSum **765** | 7,950 / **686** | 6,516 / 639 |
+| `12\43`（Foe Requiem） | 13,150 / **765** | 13,150 / **560** | 13,150 / 469 |
+
+`maxSum 765` は白飛び（白い板）。`alpha_add` で覆域をほぼ保ったまま階調が出る。
 
 
 

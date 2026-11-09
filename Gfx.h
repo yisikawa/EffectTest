@@ -24,6 +24,24 @@ void GfxDrawQuad(const float center[3],
                  const float rgba[4],
                  ID3D11ShaderResourceView* srv);
 
+//------------------------------------------------------------------
+//  合成モード（AltanaView の SetRenderState 実測値に対応）
+//    ALPHA_ADD : SRC=SRCALPHA / DST=ONE         … 既定（エフェクト用）
+//    ADD       : SRC=ONE      / DST=ONE         … 純加算（旧来）
+//    ALPHA     : SRC=SRCALPHA / DST=INVSRCALPHA … 通常の透過（モデル用）
+//------------------------------------------------------------------
+enum GfxBlendMode
+{
+    GFX_BLEND_ALPHA_ADD = 0,
+    GFX_BLEND_ADD       = 1,
+    GFX_BLEND_ALPHA     = 2,
+    GFX_BLEND_COUNT     = 3,
+};
+
+void         GfxSetBlendMode(GfxBlendMode mode);
+GfxBlendMode GfxGetBlendMode();
+const char*  GfxBlendModeName(GfxBlendMode mode);
+
 ID3D11Device*        GfxDevice();
 ID3D11DeviceContext* GfxContext();
 

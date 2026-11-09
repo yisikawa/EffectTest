@@ -322,18 +322,19 @@ static void UpdateTitle()
     {
         SetWindowTextA(g_hWnd,
                        "EffectTest  —  List から項目を選択してください"
-                       "   [B]list  [O]open  [X]axes  [Space]pause");
+                       "   [B]list  [O]open  [X]axes  [M]blend  [Space]pause");
         return;
     }
 
     char buf[768];
     const char* name = g_DatPath.empty() ? "(no data)" : g_DatPath.c_str();
     sprintf_s(buf,
-              "EffectTest  %s  |  ip=%zu/%zu  t=%.3f/%.3fs  inst=%zu  %s%s  [O]open [Space]pause [</>]step",
+              "EffectTest  %s  |  ip=%zu/%zu  t=%.3f/%.3fs  inst=%zu  blend=%s  %s%s  [O]open [Space]pause [</>]step",
               name,
               g_Effect.Ip(), g_Effect.Timeline().size(),
               g_Effect.Frame() / 60.0f, g_Effect.Duration(),
               g_Effect.Instances().size(),
+              GfxBlendModeName(GfxGetBlendMode()),
               g_Paused ? "PAUSED " : "",
               g_Trace ? "TRACE " : "");
     SetWindowTextA(g_hWnd, buf);
@@ -488,6 +489,13 @@ static void HandleKey(WPARAM key, bool down)
     case 'L': g_Effect.SetLoop(!g_Effect.Loop()); break;
     case 'G': g_Layout = !g_Layout; break;
     case 'W': g_NoTexture = !g_NoTexture; break;      // テクスチャ無し（白）で描く
+    case 'M':                                          // 合成モードの切替（alpha_add/add/alpha）
+    {
+        const int next = ((int)GfxGetBlendMode() + 1) % GFX_BLEND_COUNT;
+        GfxSetBlendMode((GfxBlendMode)next);
+        Log("[blend] %s", GfxBlendModeName(GfxGetBlendMode()));
+        break;
+    }
     case 'X': g_ShowAxes = !g_ShowAxes; break;        // 座標軸の表示切替（既定 OFF）
     case 'B':                                          // List ブラウザの表示切替
         if (g_hPanel != nullptr)
@@ -1157,10 +1165,28 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
         char* p = lpCmdLine + 6;
         char dat[MAX_PATH] = {};
         char png[MAX_PATH] = "effecttest_shot.png";
-        if (!NextToken(p, dat, MAX_PATH)) return 2;
 
-        char second[MAX_PATH] = {};
-        if (NextToken(p, second, MAX_PATH)) strncpy_s(png, second, _TRUNCATE);
+        // --blend alpha_add|add|alpha（検証用。省略時は alpha_add）
+        for (;;)
+        {
+            char tok[MAX_PATH] = {};
+            if (!NextToken(p, tok, MAX_PATH)) break;
+
+            if (_stricmp(tok, "--blend") == 0)
+            {
+                char mode[MAX_PATH] = {};
+                if (!NextToken(p, mode, MAX_PATH)) return 2;
+                if      (_stricmp(mode, "alpha_add") == 0) GfxSetBlendMode(GFX_BLEND_ALPHA_ADD);
+                else if (_stricmp(mode, "add")       == 0) GfxSetBlendMode(GFX_BLEND_ADD);
+                else if (_stricmp(mode, "alpha")     == 0) GfxSetBlendMode(GFX_BLEND_ALPHA);
+                else { Log("[shot] unknown blend: %s", mode); return 2; }
+                continue;
+            }
+
+            if (dat[0] == 0) strncpy_s(dat, tok, _TRUNCATE);
+            else             strncpy_s(png, tok, _TRUNCATE);
+        }
+        if (dat[0] == 0) return 2;
 
         // base（ROM\0\0.DAT）を先に読み、+0xAC が base の 0x20 を指す場合に借用できるようにする
         if (FindFFXI(g_FfxiBase, sizeof(g_FfxiBase)))
@@ -1201,8 +1227,9 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
         MultiByteToWideChar(CP_ACP, 0, png, -1, wpng, MAX_PATH);
         const bool ok = GfxSaveBackBufferPNG(wpng);
 
-        Log("[shot] dat=%s png=%s inst=%zu tex=%zu ok=%d",
-            dat, png, g_Effect.Instances().size(), g_Effect.Textures().size(), ok ? 1 : 0);
+        Log("[shot] dat=%s png=%s blend=%s inst=%zu tex=%zu ok=%d",
+            dat, png, GfxBlendModeName(GfxGetBlendMode()),
+            g_Effect.Instances().size(), g_Effect.Textures().size(), ok ? 1 : 0);
 
         g_Effect.ReleaseTextures();
         g_Dat.Unload();

@@ -73,13 +73,15 @@
 | T-08 | `--action "…\131\6.DAT"`（名前なし） | `0x07` 一覧が **39 件**（出力書式は不変） | ○ |
 | T-08b | `--action "…\12\43.DAT"`（名前なし） | `0x07` が **2 件**（`main`, `hit1`） | ○ |
 | T-12 | `--list` | `groups=29`、NPC ROM1 = **1,266 件** | ○ |
+| T-13 | `--selftest "…\12\43.DAT"` | `subtl    = 1`、`timeline  = 9 insts, duration=2.6667s` | ○ |
+| T-14 | `--shot --blend add|alpha_add|alpha …\11\17.DAT` | `blend=` が指定どおり。maxSum が **765 / 686 / 639**（`add` のみ白飛び） | △（GPU 必須） |
 
 ### T3 描画
 
 | ID | 手順 | 期待 | 自動 |
 |---|---|---|---|
-| T-09 | `--shot "…\11\17.DAT" out_fire.png` | `[shot] ... inst=8 tex=5 ok=1`、非背景画素 > 6,000（4px 間引き 57,600 点） | △（GPU 必須） |
-| T-09b | `--shot "…\11\18.DAT" out_fire2.png` | `ok=1` ＆ 非背景 > 0（修正前は 0） | △ |
+| T-09 | `--shot "…\11\17.DAT" out_fire.png` | `[shot] ... blend=alpha_add inst=8 tex=5 ok=1`、非背景 **7,950** / maxSum **686**（4px 間引き 57,600 点） | △（GPU 必須） |
+| T-09b | `--shot "…\11\18.DAT" out_fire2.png` | `ok=1` ＆ 非背景 **3,701** / maxSum 725（修正前は 0） | △ |
 
 ### T4 UI 手動
 

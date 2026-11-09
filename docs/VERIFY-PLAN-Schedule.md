@@ -126,12 +126,12 @@ Expected: `timeline  = 9 insts`（`main`）。`sum0` 等は対象外でクラッ
 .\x64\Release\EffectTest.exe --shot "$ROM\11\17.DAT" out_fire.png
 Select-String -Path effecttest_log.txt -Pattern '\[shot\] dat='
 ```
-Expected: `ok=1`。`out_fire.png` が生成され、非背景 > 6,000（画素検査は手動/別スクリプト）
+Expected: `ok=1`、`blend=alpha_add`。`out_fire.png` が生成され、非背景 **7,950** / maxSum **686**（`tools\ShotStats.ps1` で計測。旧 `ONE/ONE` は 8,199〜8,206 / 765 で白飛び）
 
 ```powershell
 .\x64\Release\EffectTest.exe --shot "$ROM\11\18.DAT" out_fire2.png
 ```
-Expected: `ok=1`（修正前は 0 命令で非背景 0）
+Expected: `ok=1`・非背景 **3,701** / maxSum 725（修正前は 0 命令で非背景 0）
 
 ### V-09 GUI（T-10a〜e / T-11）
 
@@ -172,6 +172,30 @@ Expected:
 
 > **GUI アプリの呼び出し**: `& .\EffectTest.exe …` は終了を待たないため `Start-Process -Wait` を使う。
 > `-ArgumentList` は自動クォートしないため、空白を含むパスは `'"' + $path + '"'` で囲む。
+
+### V-13 合成モード（T-14・GPU 必須）
+
+```powershell
+$exe = (Resolve-Path '.\x64\Release\EffectTest.exe').Path
+$dat = 'C:\Program Files (x86)\PlayOnline\SquareEnix\FINAL FANTASY XI\ROM\11\17.DAT'
+foreach ($m in 'add','alpha_add','alpha')
+{
+    Remove-Item effecttest_log.txt -ErrorAction SilentlyContinue
+    Start-Process -FilePath $exe -ArgumentList @('--shot','--blend',$m,('"' + $dat + '"'),("out_fire_$m.png")) -Wait
+    Start-Sleep -Milliseconds 250
+    (Select-String -Path effecttest_log.txt -Pattern '^\[shot\] dat=').Line
+    powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\ShotStats.ps1 -Path "out_fire_$m.png"
+}
+```
+Expected（`[shot] … blend=<mode>` が指定どおり）:
+
+| `--blend` | `blend=` | 非背景 | maxSum |
+|---|---|---|---|
+| `add` | `add` | 約 8,206 | **765**（白飛び） |
+| `alpha_add`（既定） | `alpha_add` | 約 7,950 | **686** |
+| `alpha` | `alpha` | 約 6,516 | **639** |
+
+`--blend` を省略したとき `blend=alpha_add` になること（`11\18` = 3,701、`11\22` = 6,596、`12\43` = 13,150 / maxSum 560）。
 
 ## 5. ゴールデン表（数値の根拠）
 
@@ -214,13 +238,14 @@ Expected:
 | V-05 | ✅ | `22 gen=8/8 tex=3/5 base=2 unused=2` / `23 11/11 3/7 1 4` / `23 14/14 2/6 0 4` |
 | V-06 | ✅ | NPC `131/6` = 39 件、`12/43` = `main,hit1` |
 | V-07 | ✅ | `prog=0x50`、`timeline = 13 insts, duration=8.3333s`、exit 0（timeline でない `0x07`（`sum0` 等）を含む DAT でもクラッシュしない） |
-| V-08 | ✅ | `ok=1`。非背景 **8,199**（Fire）/ **2,738**（Fire II）。最大 RGB 和 765 / 719 |
+| V-08 | ✅ | `ok=1`、`blend=alpha_add`。非背景 **7,950**（Fire）/ **3,701**（Fire II）。最大 RGB 和 686 / 725（旧 `ONE/ONE` は 8,199 / 2,738・765 / 719） |
 | V-11（Phase 2） | ✅ | `--shot` で `[base] … tex=61 load_ms=4`、`g006 link=hit6 srv≠0` / `g005 link=hi17 srv≠0`（base の `0x20` を借用）。`gs00`(0x3D)・`g003`(0x1F) は `srv=0`（白）で正常 |
 | V-12（入れ子） | ✅ | `12\43`: `subtl = 1`（`main`→`hit1`）、`timeline = 9 insts`、`--shot` で `inst=8 ok=1`・非背景 **13,150**（修正前は main 単体で 0） |
+| V-13（合成） | ✅ | 既定 `blend=alpha_add`。Fire 非背景 7,950 / maxSum 686（`add`=8,206/765、`alpha`=6,516/639）。`12\43` は 13,150 / 560 |
 | V-09 | 未実施 | GUI のクリック操作（手動） |
 | V-10 | ✅ | `groups=29` / `NPC ROM1 items=1266` |
 
-→ **自動検証 12 項目中 11 合格・1 未実施（V-09 の GUI 操作のみ手動）**。`--shot` の画素は 4px 間引き 57,600 点中の非背景数。
+→ **自動検証 13 項目中 12 合格・1 未実施（V-09 の GUI 操作のみ手動）**。`--shot` の画素は 4px 間引き 57,600 点中の非背景数。
 
 
 ## 8. 制約・再現性

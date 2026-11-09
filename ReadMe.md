@@ -64,6 +64,7 @@ EffectTest.exe "C:\Program Files (x86)\PlayOnline\SquareEnix\FINAL FANTASY XI\RO
 | `+` / `-` | 再生速度 |
 | `1`〜`9` | 使用テクスチャ番号 |
 | `W` | テクスチャを使わず白で描く（表示されない時の切り分け用） |
+| `M` | 合成モードの切替（`alpha_add` → `add` → `alpha`、既定 `alpha_add`） |
 | `X` | 座標軸（赤=X/緑=Y/青=Z）の表示切替 — **既定 OFF**（起動時は何も描かない） |
 | `B` | List パネルの表示 / 非表示 |
 | `Esc` | 終了 |
@@ -178,7 +179,7 @@ EffectTest.exe --selftest "<DAT>"              # Effect としてのタイムラ
 | `FUN_0040e650` | **VM#1**（目標値評価） | `Vm1()`（EffectVm.cpp） |
 | `FUN_0040f4b0` | **VM#2**（時間積分） | `Vm2()`（EffectVm.cpp） |
 | `FUN_0040f820` | キーフレーム線形補間 | 未実装（op 0x4F はテーブル直接参照で代替） |
-| `D3D` 描画部 | ビルボード / 加算合成 | `Gfx::GfxDrawQuad()`（D3D9 → D3D11 で代替） |
+| `D3D` 描画部 | ビルボード / `SRCALPHA`+`ONE` 合成（`ALPHABLENDENABLE=1`, `ZWRITEENABLE=0`） | `Gfx::GfxDrawQuad()`（D3D9 → D3D11 で代替。既定 `alpha_add`） |
 | `CData::LoadTextureFromFile` (ModelTest) | TIM デコード | `CreateTimTexture()` |
 
 ---
@@ -329,12 +330,40 @@ next < 16 で終端 / pos += next
 
 `ROM\11\17.DAT` を 90 フレーム進めて描画し PNG 化 → 4px 間引きで 57,600 点を検査:
 
-| 指標 | 修正前 | 修正後 |
-|---|---|---|
-| 背景以外のサンプル数 | 13（軸のみ） | **6,722** |
-| 最大 RGB 合計 | 456 | **765**（白＋橙のインスタンス） |
+| 指標 | 修正前（軸のみ） | 加算 `ONE/ONE`（旧既定） | **既定 `alpha_add`** |
+|---|---|---|---|
+| 背景以外のサンプル数 | 13 | 8,206 | **7,950** |
+| 最大 RGB 合計 | 456 | 765（白飛び） | **686** |
 
 スクリーンショット: `shot_fire.png`（`--shot` で再生成可能）
+
+#### 合成モード（`M` キー / `--blend`）
+
+AltanaView の `SetRenderState` を静的に走査すると、エフェクト描画は
+**`ALPHABLENDENABLE=1` / `SRCBLEND=SRCALPHA(5)` / `DESTBLEND=ONE(2)` / `ZWRITEENABLE=0`** でした
+（`AltanaView_unpacked.exe` の `0x40b8b0`〜`0x40b8ca`）。`SRCBLEND=ONE` の設定は存在せず、
+旧来の純加算（`ONE/ONE`）は白飛びの原因でした。
+
+| モード | ブレンド式 | 用途 |
+|---|---|---|
+| `alpha_add`（既定） | `dst + src*srcA` | エフェクト（AltanaView 実測） |
+| `add` | `dst + src` | 旧来の純加算（比較用） |
+| `alpha` | `src*srcA + dst*(1-srcA)` | モデル／通常透過（AltanaView の `+0x407fe9`〜） |
+
+- GUI: `M` キーで巡回。現在のモードはタイトルとログ `[blend] <mode>` に出ます
+- ヘッドレス: `--shot --blend alpha_add|add|alpha "<dat>" out.png`（`[shot] … blend=<mode>` を出力）
+- 画素統計: `powershell -NoProfile -ExecutionPolicy Bypass -File tools\ShotStats.ps1 -Path out_fire.png`
+  → `sampled=57600 nonBg=7950 maxSum=686`
+
+| DAT | `add` | `alpha_add` | `alpha` |
+|---|---|---|---|
+| `11\17`（Fire） | 8,206 / 765 | **7,950 / 686** | 6,516 / 639 |
+| `11\18`（Fire II） | — | **3,701 / 725** | — |
+| `11\22`（Blizzard） | — | **6,596 / 557** | — |
+| `12\43`（Foe Requiem） | 13,150 / 765 | **13,150 / 560** | 13,150 / 469 |
+
+> `12\43` で見える**チェッカー模様の板**は、テクスチャアトラスの全面をそのまま貼っているためです
+> （`0x21` のフレーム／UV 未適用）。合成ではなく UV の問題として次段で扱います。
 
 
 
