@@ -27,6 +27,7 @@ effecttest_shot_diag.txt
 /shot_*.png
 /effecttest_*.png
 /out_*.png
+/gif_*.png
 effecttest_trace.csv
 
 # ---- 一時 ----
