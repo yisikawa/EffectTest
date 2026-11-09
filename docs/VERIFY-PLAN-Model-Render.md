@@ -128,6 +128,18 @@ Select-String -Path effecttest_log.txt -Pattern '^\[shot\] model=|^\[shot\] root
 ```
 期待: `model=…\ROM\27\82.DAT bones=94 motions=130 … bone=10`、`root bone=10 pos=(-0.034,-1.063,-0.059)`、非背景 **452**
 
+### V-M11 インスタンス毎の骨（`--bone-map`）
+
+```powershell
+Start-Process $exe -ArgumentList @('--shot','--bone-map','0:10,1:20','--motion','idl0',('"'+$ROM+'\11\18.DAT"'),'m_bm.png') -Wait
+Select-String -Path effecttest_log.txt -Pattern 'bone-map|model='
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\ShotStats.ps1 -Path m_bm.png
+```
+期待（実測値）:
+- `[shot] bone-map=0:10,1:20 mapped=2 inst=11`
+- 非背景 **2,591**（なしは 2,694、`0:10,1:20,2:30,3:40` は 2,050）
+- 骨は **0 始まりの配列番号**（`Skeleton::World(index)`）
+
 ## 3. 失敗時の切り分け
 
 | 症状 | 疑う箇所 | 確認 |

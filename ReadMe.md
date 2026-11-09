@@ -360,6 +360,8 @@ AltanaView の `SetRenderState` を静的に走査すると、エフェクト描
 - 骨格（GPU 不要）: `--skel "<model dat>" [motion4]`（骨数・モーション一覧・姿勢の変化をログ）
 - 骨をエフェクトのルートに: `--shot --model human --motion <name4> --bone N "<effect dat>" out.png`
   （`--bone` だけなら基準モデル **human**（`0-27-82` → `ROM\27\82.DAT`）を自動使用）
+- インスタンス毎の骨: `--shot --bone-map "0:10,1:20" --motion <name4> "<effect dat>" out.png`
+  （骨は **0 始まりの配列番号**。`--bone` と独立で、未指定インスタンスは変換なし）
 - 背景色: `--shot --bg RRGGBB "<dat>" out.png`（参照動画は `40F0F0`）
 - 色順（診断用）: `--shot --color bgr|rgb "<dat>" out.png`（既定 `rgb`。PNG 保存の色順は修正済み）
 - 参照動画との比較: `ffmpeg -ss <3.2 + N/60> -i fire2.mp4 -frames:v 1 -vf "crop=620:900:640:90" cmp.png`（`docs/VERIFY-PLAN-Schedule.md` V-15）

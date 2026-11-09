@@ -53,6 +53,10 @@ int   g_SizeMode  = 0;        // 0: scale / 1: 0x21 quad / 2: 正方形（scale[
 bool      g_RootActive = false;
 float     g_Root[16]   = { 1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1 };
 int       g_RootBone   = 0;
+
+// インスタンス毎の骨（--bone-map "0:10,1:20"）。骨は 0 始まりの配列番号。
+std::vector<float> g_InstMats;      // [instance*16]
+std::vector<char>  g_InstHasBone;   // 1 = 骨あり
 float g_ClearColor[4] = { 0.05f, 0.06f, 0.09f, 1.0f };   // --bg で変更（参照動画と合わせる用）
     int   g_TexIndex  = 0;
 
@@ -453,10 +457,16 @@ static void RenderScene(bool present)
         float axisR[3] = { right[0] * halfW, right[1] * halfW, right[2] * halfW };
         float axisU[3] = { up[0] * halfH,    up[1] * halfH,    up[2] * halfH };
 
-        // 骨格のルート変換（--model / --motion / --bone）をエフェクト空間に適用
-        if (g_RootActive)
+        // 骨格のルート変換（--model / --motion / --bone / --bone-map）
+        const float* Mptr = nullptr;
+        if (i < (int)g_InstHasBone.size() && g_InstHasBone[i])
+            Mptr = &g_InstMats[(size_t)i * 16];
+        else if (g_RootActive)
+            Mptr = g_Root;
+
+        if (Mptr != nullptr)
         {
-            const XMMATRIX M = XMLoadFloat4x4(reinterpret_cast<const XMFLOAT4X4*>(g_Root));
+            const XMMATRIX M = XMLoadFloat4x4(reinterpret_cast<const XMFLOAT4X4*>(Mptr));
             XMFLOAT3 tmp = {};
             XMStoreFloat3(&tmp, XMVector3Transform(XMVectorSet(center[0], center[1], center[2], 1.0f), M));
             center[0] = tmp.x; center[1] = tmp.y; center[2] = tmp.z;
@@ -1312,7 +1322,9 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
         char png[MAX_PATH] = "effecttest_shot.png";
         char model[MAX_PATH] = {};                  // --model: 骨格をエフェクトのルートに使う
         char motion[MAX_PATH] = {};
-        bool boneSpecified = false;
+        char boneMap[MAX_PATH] = {};                // --bone-map "0:10,1:20"
+        bool boneSpecified = false;                 // モデル（human）を要するか
+        bool boneOnly = false;                      // --bone が明示されたか（全体ルート）
         int  frames = 90;                       // 既定 90 フレーム（1.5 s）
 
         // --blend alpha_add|add|alpha（検証用。省略時は alpha_add）
@@ -1359,6 +1371,14 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
                 char n[MAX_PATH] = {};
                 if (!NextToken(p, n, MAX_PATH)) return 2;
                 g_RootBone = atoi(n);
+                boneSpecified = true;
+                boneOnly = true;
+                continue;
+            }
+
+            if (_stricmp(tok, "--bone-map") == 0)
+            {
+                if (!NextToken(p, boneMap, MAX_PATH)) return 2;
                 boneSpecified = true;
                 continue;
             }
@@ -1478,7 +1498,7 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
                 if (w != nullptr)
                 {
                     memcpy(g_Root, w, sizeof(g_Root));
-                    g_RootActive = true;
+                    if (boneOnly) g_RootActive = true;   // --bone 指定時のみ全体に適用
                 }
             }
         }
@@ -1486,6 +1506,43 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
         if (g_RootActive)
             Log("[shot] root bone=%d pos=(%.3f,%.3f,%.3f)",
                 g_RootBone, g_Root[12], g_Root[13], g_Root[14]);
+
+        //--------------------------------------------------------------
+        // インスタンス毎の骨（--bone-map "i:b,i:b"）。骨は 0 始まりの配列番号。
+        //--------------------------------------------------------------
+        if (haveSkel && boneMap[0] != '\0')
+        {
+            const size_t n = g_Effect.Instances().size();
+            g_InstMats.assign(n * 16, 0.0f);
+            g_InstHasBone.assign(n, 0);
+
+            const char* s = boneMap;
+            while (*s != '\0')
+            {
+                const int idx = atoi(s);
+                const char* c = strchr(s, ':');
+                if (c == nullptr) break;
+
+                const int bone = atoi(c + 1);
+                if (idx >= 0 && (size_t)idx < n)
+                {
+                    const float* w = skel.World(bone);
+                    if (w != nullptr)
+                    {
+                        memcpy(&g_InstMats[(size_t)idx * 16], w, 16 * sizeof(float));
+                        g_InstHasBone[(size_t)idx] = 1;
+                    }
+                }
+
+                const char* comma = strchr(c + 1, ',');
+                if (comma == nullptr) break;
+                s = comma + 1;
+            }
+
+            int mapped = 0;
+            for (char f : g_InstHasBone) if (f) ++mapped;
+            Log("[shot] bone-map=%s mapped=%d inst=%zu", boneMap, mapped, n);
+        }
 
         // 描画入力のダンプ（原因切り分け用）
         for (const TimTexture& t : g_Effect.Textures())
