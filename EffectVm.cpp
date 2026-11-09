@@ -26,6 +26,11 @@ namespace
 //======================================================================
 static void Vm1(const MotionInstance& mi, SubUnit& su, const EffectContext& ctx)
 {
+    // モデル従属モード（AltanaView の ctx+0x1a0 != 0）:
+    //   0x45/0x47/0x49 以外の op は実行されない。当方では位置は骨行列で与えるため、
+    //   VM#1 自体を省略する（Pos は 0 のまま → 骨の位置に描かれる）。
+    if (ctx.Attached()) return;
+
     uint32_t ip = mi.gen->tblB;
 
     for (int guard = 0; guard < 8192; ++guard)

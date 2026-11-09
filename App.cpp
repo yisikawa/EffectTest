@@ -1506,6 +1506,16 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
                 continue;
             }
 
+            if (_stricmp(tok, "--attached") == 0)
+            {
+                char mode[MAX_PATH] = {};
+                if (!NextToken(p, mode, MAX_PATH)) return 2;
+                if      (_stricmp(mode, "on")  == 0) g_Effect.SetAttached(true);
+                else if (_stricmp(mode, "off") == 0) g_Effect.SetAttached(false);
+                else { Log("[shot] unknown attached: %s", mode); return 2; }
+                continue;
+            }
+
             if (_stricmp(tok, "--uvcrop") == 0)
             {
                 char mode[MAX_PATH] = {};
@@ -1588,6 +1598,9 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
             else if (mdl.Load(mpath) && skel.Load(mdl))
             {
                 haveSkel = true;
+                // AltanaView の ctx+0x1a0 != 0（モデル従属）相当:
+                //   モデルに載せる場合は VM#1 の位置 op を実行しない
+                g_Effect.SetAttached(true);
                 if (motion[0] != '\0' && !skel.SetMotion(motion))
                     Log("[shot] model motion not found: %s", motion);
                 Log("[shot] model=%s bones=%d motions=%zu motion=%s rot=%s bone=%d",

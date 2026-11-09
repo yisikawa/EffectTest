@@ -207,6 +207,20 @@ $ROM='C:\Program Files (x86)\PlayOnline\SquareEnix\FINAL FANTASY XI\ROM'
 - ループフラグ（main のストリーム D `+0x8C` の op 0x05）は 4 つの DAT で**すべて false**
   → `--trace` で確認しても経過時間は単調増加（再初期化は起きない）
 
+### V-M16 モデル従属モード（`+0x1a0 != 0` 相当）
+
+```powershell
+$ROM='C:\Program Files (x86)\PlayOnline\SquareEnix\FINAL FANTASY XI\ROM'
+.\x64\Release\EffectTest.exe --shot --frames 90 "$ROM\11\18.DAT" at_off.png          # 単体再生
+.\x64\Release\EffectTest.exe --shot --frames 90 --bone 0  --motion idl0 "$ROM\11\18.DAT" at_b0.png
+.\x64\Release\EffectTest.exe --shot --frames 90 --bone 10 --motion idl0 "$ROM\11\18.DAT" at_b10.png
+```
+期待（実測値・2026-11-09）:
+- 単体再生 **4,048 / 576**（`--model` 無しは不変＝他 DAT のゴールデンも不変）
+- `--bone 0` **7,898 / 686**、`--bone 10` **4,429 / 692**
+- `--bone` 指定時は `--attached` が**自動 on** になり、VM#1 の位置 op が走らない
+- 180 フレーム・`--bg 40F0F0`・`--bone 10` で「骨の位置に縦の柱状に集中」することを画像で確認
+
 ## 3. 失敗時の切り分け
 
 ### 3.0 既定サイズモードの変更（2026-11-09）

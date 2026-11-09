@@ -196,6 +196,11 @@ public:
     void SetUvCrop(bool on) { m_UvCrop = on; }
     bool UvCrop() const { return m_UvCrop; }
 
+    // モデル従属モード（AltanaView の ctx+0x1a0 != 0 相当）
+    //   true にすると VM#1 の op を実行しない（位置は骨行列で決まる）
+    void SetAttached(bool on) { m_Attached = on; }
+    bool Attached() const { return m_Attached; }
+
     // ビルボード寸法に 0x21 クワッドの範囲を使う（--size quad）
     void SetQuadSize(bool on) { m_QuadSize = on; }
     bool QuadSize() const { return m_QuadSize; }
@@ -260,6 +265,7 @@ private:
     bool     m_RandomFrame  = false;    // 0x21 のフレームを乱数選択（AltanaView 準拠は true。--uvframe random）
     bool     m_LoopRespawn  = false;    // サブ再初期化（main のストリーム D に op 0x05）
     bool     m_UvCrop       = false;    // 0x21 無しの UV をテクスチャの不透明領域に（--uvcrop on）
+    bool     m_Attached     = false;    // モデル従属（ctx+0x1a0 != 0 相当。VM#1 を実行しない）
     bool     m_QuadSize     = false;    // 0x21 クワッド寸法で描く（--size quad）
 
     TimTexture m_WhiteTex;
