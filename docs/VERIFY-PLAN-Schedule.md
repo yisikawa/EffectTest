@@ -155,6 +155,24 @@ Select-String -Path effecttest_log.txt -Pattern '\[list\] groups=|NPC ROM1'
 ```
 Expected: `groups=29`、NPC ROM1 = `items=1266`
 
+### V-12 入れ子 Schedule（T-13）
+
+```powershell
+$exe = (Resolve-Path '.\x64\Release\EffectTest.exe').Path
+$dat = 'C:\Program Files (x86)\PlayOnline\SquareEnix\FINAL FANTASY XI\ROM\12\43.DAT'
+Start-Process -FilePath $exe -ArgumentList @('--selftest', ('"' + $dat + '"')) -Wait
+Select-String -Path effecttest_selftest.txt -Pattern '^subtl|^timeline'
+Start-Process -FilePath $exe -ArgumentList @('--shot', ('"' + $dat + '"'), 'out_song.png') -Wait
+Select-String -Path effecttest_log.txt -Pattern '\[shot\] dat='
+```
+Expected:
+- `subtl    = 1`（`main` が `hit1` を起動）
+- `timeline  = 9 insts, duration=2.6667s`（`main` 単体は `spawn(op=0x02)=0`）
+- `[shot] … inst=8 … ok=1`、`out_song.png` の非背景 > 0
+
+> **GUI アプリの呼び出し**: `& .\EffectTest.exe …` は終了を待たないため `Start-Process -Wait` を使う。
+> `-ArgumentList` は自動クォートしないため、空白を含むパスは `'"' + $path + '"'` で囲む。
+
 ## 5. ゴールデン表（数値の根拠）
 
 | 指標 | 値 |
@@ -198,10 +216,11 @@ Expected: `groups=29`、NPC ROM1 = `items=1266`
 | V-07 | ✅ | `prog=0x50`、`timeline = 13 insts, duration=8.3333s`、exit 0（timeline でない `0x07`（`sum0` 等）を含む DAT でもクラッシュしない） |
 | V-08 | ✅ | `ok=1`。非背景 **8,199**（Fire）/ **2,738**（Fire II）。最大 RGB 和 765 / 719 |
 | V-11（Phase 2） | ✅ | `--shot` で `[base] … tex=61 load_ms=4`、`g006 link=hit6 srv≠0` / `g005 link=hi17 srv≠0`（base の `0x20` を借用）。`gs00`(0x3D)・`g003`(0x1F) は `srv=0`（白）で正常 |
+| V-12（入れ子） | ✅ | `12\43`: `subtl = 1`（`main`→`hit1`）、`timeline = 9 insts`、`--shot` で `inst=8 ok=1`・非背景 **13,150**（修正前は main 単体で 0） |
 | V-09 | 未実施 | GUI のクリック操作（手動） |
 | V-10 | ✅ | `groups=29` / `NPC ROM1 items=1266` |
 
-→ **自動検証 10 項目中 9 合格・1 未実施（V-09 の GUI 操作のみ手動）**。`--shot` の画素は 4px 間引き 57,600 点中の非背景数。
+→ **自動検証 12 項目中 11 合格・1 未実施（V-09 の GUI 操作のみ手動）**。`--shot` の画素は 4px 間引き 57,600 点中の非背景数。
 
 
 ## 8. 制約・再現性
