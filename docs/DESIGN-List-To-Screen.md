@@ -370,9 +370,10 @@ CommitSelection(index):                        // 唯一の確定経路
         Schedule へ LB_ADDSTRING → **`main` を既定選択**（無ければ先頭）。自動選択のみ／再生しない
         有効化、ラベル "Schedule (<件数>)"
     Effect グループ:
-        既定 Schedule（`main`、無ければ先頭の 0x07）を構築して即再生（`BuildFromChunk`）／`g_Paused = false`
+        `LoadDatFile` が既定 Schedule（`main`、無ければ先頭の 0x07）を構築済み → **同一なら再構築しない**
+        既定と異なる Schedule を選んだときだけ `BuildFromChunk`／`g_Paused = false`
     NPC グループ:
-        モデル表示（P1）と Schedule 一覧の提示のみ（自動再生しない）
+        モデル表示（P1）と Schedule 一覧の提示のみ（**自動では再生しない**。行を選ぶと `g_ActionCtx` で再生）
     UpdateTitle()（EffectTest はタイトル/ログが表示更新点。モデル描画は P1）
 
 WM_COMMAND / IDC_SCHEDULE / LBN_SELCHANGE または LBN_DBLCLK
@@ -427,7 +428,7 @@ WM_COMMAND / IDC_SCHEDULE / LBN_SELCHANGE または LBN_DBLCLK
 | `LayoutPanel`（`:524`） | 3 要素 | 上記の式へ |
 | `FillItems`（`:575`） | `CB_RESETCONTENT` | 確定待ちの破棄（`g_PendingItem = -1`）、Schedule 空・無効、確定 index リセット |
 | `LoadListSelection`（`:599`） | 確定処理 | `CommitSelection` に改称（§4.7.3 の分岐） |
-| `LoadDatFile`（`:282`） | `g_Effect.Build`（`main` 固定） | 既定 Schedule（`main`）を構築。以降の切替は `BuildFromChunk(name)` |
+| `LoadDatFile`（`:282`） | `g_Effect.Build`（`main` 固定） | 既定 Schedule（`main`）を構築。**既定と同一なら再構築しない**。異なる選択時のみ `BuildFromChunk(name)` |
 | `PlaySelectedAction`（`:648`） | `g_ActionNames` / NPC 専用 | `PlaySelectedSchedule` に改称し、**Effect でも `g_Effect.BuildFromChunk(name)`** で再生。NPC は `g_ActionCtx` のまま |
 | `PanelProc`（`:686-704`） | `LBN_DBLCLK` のみ | `LBN_SELCHANGE` を追加（選択を pending に記録）、`IDC_SCHEDULE` の `LBN_SELCHANGE`/`LBN_DBLCLK`。**`WM_TIMER` は使わない** |
 | 描画ループ（`:1166-1182`） | `g_Effect.Advance(g_Dt)` のみ | 毎フレーム `TickPendingCommit()` を呼び、7 コマ静止で確定（`kCommitDelayFrames`） |
@@ -505,6 +506,9 @@ needed20 = { link(g) | g ∈ needed05 かつ link(g) が 0x20 }                 
          ※ dist = 予約語（距離ベース）/ nulp = 参照先なし → **解決対象外**（白テクスチャ）
 ```
 
+> **Phase 1（実装計画 2026-11-09）はローカル `0x20` のみ**を解決する。base の `0x20`（`hit6`/`hi17` 等）は **Phase 2**（§4.8.4）で遅延解決する。
+> `link` が `0x20` 以外（`0x1F`/`0x21`/`0x3D`/base/予約語）を指す generator は **`tex = -1`（白テクスチャ）が正常**。
+
 | DAT | generator 参照 | ローカル `0x20`（必要/総数） | base `0x20` | 直接参照なし |
 |---|---|---|---|---|
 | `11\17` Fire | 8 / 8 | `fai0`,`fai1`,`fai2`（**3 / 5**） | `hit6`, `hi17` | `fai3`, `f101` |
@@ -516,7 +520,7 @@ needed20 = { link(g) | g ∈ needed05 かつ link(g) が 0x20 }                 
 
 #### 4.8.4 base の遅延ロード
 
-- 起動時: `ROM\0\0.DAT` を読み、**名前→チャンクのハッシュ**（`0x05`/`0x07`/`0x20`）を作るだけ（1,105 件）
+- 起動時: `ROM\0\0.DAT` を読み、**名前→チャンクのハッシュ**（`0x05`/`0x07`/`0x20`）を作るだけ（1,105 件。**Phase 1 はここまで**／SRV 生成は Phase 2）
 - `0x20`: SRV は**初回参照時**に生成。使用枚数は上表のとおり数枚（最大でも 61 枚全部ではない）。LRU で解放
 - ROM 別ベース（R8）でも同じ方針（ベースごとにハッシュを持つ）
 - 失敗時: 従来どおり警告のみで継続（R7）。テクスチャ生成失敗は白テクスチャで代替
@@ -533,6 +537,9 @@ needed20 = { link(g) | g ∈ needed05 かつ link(g) が 0x20 }                 
 | 描画 | `--shot` | `11\17`: 非背景 > 6,000。`11\18`・`11\22` も**非ゼロ**（現行実装では 0 になる＝回帰検出） |
 
 > アプリに期待値を出力させると同じバグを共有するため、必要資源の正解は**外部スクリプト側**で算出する（テストの独立オラクル）。
+>
+> テスト計画: `docs/superpowers/plans/2026-11-09-test-plan-schedule.md`（T-01〜T-12）／
+> 検証計画: `docs/superpowers/plans/2026-11-09-verification-plan-schedule.md`（V-01〜V-10）
 
 ---
 
@@ -589,7 +596,7 @@ needed20 = { link(g) | g ∈ needed05 かつ link(g) が 0x20 }                 
 | 不明（`0x07` 無し等） | 109 |
 
 例: Fire 200 / Fire II 250 / Blizzard 271 / Meteor 139 / Foe Requiem 160 / Berserk 188。
-※ 尺は**命令列を解析しなくても**ヘッダから取得できる（§4.8.2 の判定が未確定でも表示可能）。
+※ 尺は**命令列を解析しなくても**ヘッダから取得できる。実装は `sum(delay)` で算出し、実測 4 件（Fire 200 / Fire II 250 / Blizzard 271 / Foe Requiem 160）でヘッダ `+0x2C` と一致する。
 
 #### 4.9.4 資源規模（限定の妥当性）
 
@@ -696,6 +703,7 @@ ModelTest.exe --action "ROM\131\6.DAT" atk0
 - 画面にエフェクトが出る（加算合成・テクスチャ付き）
 - **開始オフセットの統一（`+0x50`）**: `11\18`・`11\22` のような `+0x80` では 0 命令になる DAT も、`+0x50` 固定で正しく読める（§4.8.2）
 - **テクスチャ割当**: generator の `+0xAC` により `fai0`/`fai1`/`fai2` が別テクスチャで描かれる
+- **base テクスチャは白で許容**: `hit6`/`hi17` 等の base `0x20` は Phase 2（未解決は `tex=-1`＝白）
 - **資源限定**: 未参照テクスチャ（`fai3` 等）を読み込まない（`--selftest` の `tex=` と外部スクリプトの必要集合が §4.8.3 と一致）
 - **Schedule の切替**: `12\43`（Foe Requiem）で `hit1` を選ぶと `main` と別の再生になる（`BuildFromChunk` 経路の確認）
 **検証**

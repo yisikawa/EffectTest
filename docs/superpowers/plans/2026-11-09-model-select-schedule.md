@@ -8,6 +8,9 @@
 
 **Tech Stack:** C++17 / Win32 / DirectX 11 / MSBuild v143 (Release x64) / PowerShell 5.1（検証スクリプト）
 
+> テスト計画: `docs/superpowers/plans/2026-11-09-test-plan-schedule.md`
+> 検証計画: `docs/superpowers/plans/2026-11-09-verification-plan-schedule.md`
+
 ## Global Constraints
 
 - 描画 API は **DirectX 11（D3D11）**。`d3d11.lib` / `dxgi.lib` / `d3dcompiler.lib`、v143 / C++17 / Windows SDK 10.0（変更しない）
@@ -350,7 +353,7 @@ git commit -m "feat: --selftest に prog=0x50 を出力（開始オフセット�
 
 - [ ] **Step 1: グローバルと enum を置き換える**
 
-`App.cpp` の List ブラウザ用グローバル（`g_hGroup` 〜 `g_ActionNames`）を次へ置き換える。
+`App.cpp` の List ブラウザ用グローバル（`g_hGroup` 〜 `enum : int { ... };`）を次へ置き換える（`g_Base`・`kPanelClass`・`enum` を**含めて**置換する。二重宣言に注意）。
 
 ```cpp
     ListDb   g_List;
@@ -552,10 +555,10 @@ static void CommitSelection(int itemIndex)
     UpdateScheduleLabel((int)g_ScheduleNames.size());
     Log("[schedule] count=%zu", g_ScheduleNames.size());
 
-    // Effect は既定 Schedule（main）を構築して即再生。NPC は表示のみ（P1）
+    // Effect: LoadDatFile が既定（main）を構築済み。既定と同一なら再構築しない
     if (g.isEffect && !g_ScheduleNames.empty())
     {
-        PlaySelectedSchedule(def);
+        if (g_ScheduleNames[def] != "main") PlaySelectedSchedule(def);
         g_Paused = false;
     }
 
