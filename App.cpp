@@ -606,7 +606,7 @@ static void HandleKey(WPARAM key, bool down)
         {
             if (g_TraceFile == nullptr) fopen_s(&g_TraceFile, "effecttest_trace.csv", "wb");
             if (g_TraceFile)
-                fprintf(g_TraceFile, "frame,instance,name,elapsed,t01,px,py,pz,sx,sy,sz,r,g,b,a\n");
+                fprintf(g_TraceFile, "frame,instance,sub,name,elapsed,t01,px,py,pz,sx,sy,sz,r,g,b,a\n");
         }
         else if (g_TraceFile != nullptr)
         {
@@ -1459,6 +1459,15 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
                 continue;
             }
 
+            if (_stricmp(tok, "--trace") == 0)
+            {
+                // サブ（粒子）ごとの状態を CSV に出す（GUI の T キーと同じ形式）
+                if (g_TraceFile == nullptr) fopen_s(&g_TraceFile, "effecttest_trace.csv", "wb");
+                if (g_TraceFile != nullptr)
+                    fprintf(g_TraceFile, "frame,instance,sub,name,elapsed,t01,px,py,pz,sx,sy,sz,r,g,b,a\n");
+                continue;
+            }
+
             if (_stricmp(tok, "--uvframe") == 0)
             {
                 char mode[MAX_PATH] = {};
@@ -1613,6 +1622,7 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
         g_Dat.Unload();
         g_Base.Unload();
         GfxShutdown();
+        if (g_TraceFile != nullptr) { fclose(g_TraceFile); g_TraceFile = nullptr; }
         CoUninitialize();
         return ok ? 0 : 4;
     }
