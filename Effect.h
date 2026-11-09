@@ -113,6 +113,7 @@ struct MotionInstance
     float                 startTime = 0.0f;
     bool                  expired   = false;
     int                   texIndex  = -1;
+    ID3D11ShaderResourceView* srv   = nullptr;   // 借用（ローカル 0x20 または base の 0x20）
     int                   spawnOp   = 2;
 
     void Reset(const DatFile* d, const GeneratorBlock* g, float start, int tex, int op);
@@ -159,6 +160,7 @@ public:
 
     const GeneratorBlock* FindGenerator(const char* name4) const;
     int FindTextureIndex(const char* name4) const;   // +0xAC のリンク名 → 0x20 の番号（無ければ -1）
+    void SetBaseTexture(const class EffectBase* base) { m_Base = base; }  // base の 0x20 を借用する
     ID3D11ShaderResourceView* TextureSrv(int index) const;
 
 private:
@@ -167,6 +169,7 @@ private:
     bool BuildInternal(const DatFile& dat, const char* mainChunkName);
 
     const DatFile*              m_Dat = nullptr;
+    const class EffectBase*     m_Base = nullptr;   // base（ROM\0\0.DAT）のテクスチャ借用元
     std::vector<TimelineInst>   m_Timeline;
     std::vector<GeneratorBlock> m_Generators;
     std::vector<MotionInstance> m_Instances;

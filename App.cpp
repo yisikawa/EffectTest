@@ -412,7 +412,12 @@ static void RenderScene(bool present)
 
         const int texIdx = g_NoTexture ? -1
                                        : ((mi.texIndex >= 0) ? mi.texIndex : g_TexIndex);
-        GfxDrawQuad(center, axisR, axisU, rgba, g_Effect.TextureSrv(texIdx));
+
+        // base の 0x20 を借用している場合はそちらを優先（未解決なら従来どおり白）
+        ID3D11ShaderResourceView* srv = g_NoTexture ? nullptr : mi.srv;
+        if (!g_NoTexture && srv == nullptr) srv = g_Effect.TextureSrv(texIdx);
+
+        GfxDrawQuad(center, axisR, axisU, rgba, srv);
 
         if (g_TraceFile != nullptr)
         {
@@ -995,10 +1000,10 @@ static int RunSelfTest(const char* path)
                 const float* s = mi.sub.At(SUB_SCALE);
                 const float* c = mi.sub.At(SUB_COLOR);
                 fprintf(fp,
-                        " | %s t=%.3f/%.3f pos=(%.3f,%.3f,%.3f) scl=(%.3f,%.3f,%.3f) col=(%.2f,%.2f,%.2f,%.2f) tex=%d",
+                        " | %s t=%.3f/%.3f pos=(%.3f,%.3f,%.3f) scl=(%.3f,%.3f,%.3f) col=(%.2f,%.2f,%.2f,%.2f) tex=%d link=%s",
                         mi.gen->chunk.name, mi.sub.Elapsed(), mi.gen->Length(),
                         p[0], p[1], p[2], s[0], s[1], s[2], c[0], c[1], c[2], c[3],
-                        mi.texIndex);
+                        mi.texIndex, mi.gen->linkName);
             }
             fprintf(fp, "\n");
         }
@@ -1155,6 +1160,21 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
         char second[MAX_PATH] = {};
         if (NextToken(p, second, MAX_PATH)) strncpy_s(png, second, _TRUNCATE);
 
+        // base（ROM\0\0.DAT）を先に読み、+0xAC が base の 0x20 を指す場合に借用できるようにする
+        if (FindFFXI(g_FfxiBase, sizeof(g_FfxiBase)))
+        {
+            char basePath[MAX_PATH] = {};
+            sprintf_s(basePath, "%s\\ROM\\0\\0.DAT", g_FfxiBase);
+            if (g_Base.Load(GfxDevice(), basePath))
+            {
+                g_Effect.SetBaseTexture(&g_Base);
+                Log("[base] path=%s chunks=%zu gen=%zu tex=%zu timeline=%zu load_ms=%d",
+                    basePath, g_Base.ChunkCount(), g_Base.GeneratorCount(),
+                    g_Base.TextureCount(), g_Base.TimelineCount(), g_Base.LoadMs());
+            }
+            else Log("[base] 読み込み失敗（継続）: %s", basePath);
+        }
+
         if (!LoadDatFile(dat)) { Log("[shot] load failed: %s", dat); return 3; }
 
         for (int i = 0; i < 90; ++i) g_Effect.Advance(1.0f / 60.0f);
@@ -1168,9 +1188,9 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
             const float* pp = mi.sub.At(SUB_POS);
             const float* ss = mi.sub.At(SUB_SCALE);
             const float* cc = mi.sub.At(SUB_COLOR);
-            Log("[shot] inst %s pos=(%.2f,%.2f,%.2f) scl=(%.2f,%.2f,%.2f) col=(%.2f,%.2f,%.2f,%.2f) tex=%d",
+            Log("[shot] inst %s pos=(%.2f,%.2f,%.2f) scl=(%.2f,%.2f,%.2f) col=(%.2f,%.2f,%.2f,%.2f) tex=%d link=%s srv=%p",
                 mi.gen->chunk.name, pp[0], pp[1], pp[2], ss[0], ss[1], ss[2],
-                cc[0], cc[1], cc[2], cc[3], mi.texIndex);
+                cc[0], cc[1], cc[2], cc[3], mi.texIndex, mi.gen->linkName, (void*)mi.srv);
         }
 
         RenderScene(false);                     // Present せずに描画
@@ -1184,6 +1204,7 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
 
         g_Effect.ReleaseTextures();
         g_Dat.Unload();
+        g_Base.Unload();
         GfxShutdown();
         CoUninitialize();
         return ok ? 0 : 4;
@@ -1202,9 +1223,12 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
         sprintf_s(basePath, "%s\\ROM\\0\\0.DAT", g_FfxiBase);
 
         if (g_Base.Load(GfxDevice(), basePath))
+        {
+            g_Effect.SetBaseTexture(&g_Base);      // +0xAC が base の 0x20 を指す場合の借用元
             Log("[base] path=%s chunks=%zu gen=%zu tex=%zu timeline=%zu load_ms=%d",
                 basePath, g_Base.ChunkCount(), g_Base.GeneratorCount(),
                 g_Base.TextureCount(), g_Base.TimelineCount(), g_Base.LoadMs());
+        }
         else
             Log("[base] 読み込み失敗（継続）: %s", basePath);
     }
@@ -1231,7 +1255,7 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
 
         RECT mr = {};
         GetWindowRect(g_hWnd, &mr);
-        g_hPanel = CreateWindowExW(WS_EX_TOOLWINDOW, kPanelClass, L"List  (グループ / 項目 / アクション)",
+        g_hPanel = CreateWindowExW(WS_EX_TOOLWINDOW, kPanelClass, L"List  (グループ / 項目 / Schedule)",
                                    WS_OVERLAPPEDWINDOW,
                                    mr.right + 8, mr.top, 400, 640,
                                    nullptr, nullptr, hInst, nullptr);

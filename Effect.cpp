@@ -1,4 +1,5 @@
 #include "Effect.h"
+#include "EffectBase.h"
 #include <cmath>
 
 //======================================================================
@@ -259,6 +260,12 @@ void EffectContext::Spawn(const char* name4, float startSec, int op)
     MotionInstance mi;
     const int tex = FindTextureIndex(g->linkName);   // +0xAC のリンク名から 0x20 を解決
     mi.Reset(m_Dat, g, startSec, tex, op);
+
+    // 描画に使う SRV（借用）: ローカル 0x20 → base の 0x20 の順で解決
+    if (tex >= 0 && tex < (int)m_Textures.size())
+        mi.srv = m_Textures[tex].srv;
+    else if (m_Base != nullptr && g->linkName[0] != '\0')
+        mi.srv = m_Base->FindTexture(g->linkName);
 
     // 直近の色（op 0x2A）を初期色として与える
     float* col = mi.sub.Color();
