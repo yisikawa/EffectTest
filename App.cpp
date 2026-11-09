@@ -457,6 +457,14 @@ static void RenderScene(bool present)
 
             float center[3] = { p[0], p[1], p[2] };
 
+            // データ2 op 0x01 の位置オフセット（参考: cosmosa の「float x, y, z」）
+            if (mi.gen->hasPartOfs)
+            {
+                center[0] += mi.gen->partOfs[0];
+                center[1] += mi.gen->partOfs[1];
+                center[2] += mi.gen->partOfs[2];
+            }
+
             // 位置が未設定のエフェクトでも形を確認できるよう横並びに配置
             if (g_Layout && center[0] == 0.0f && center[1] == 0.0f && center[2] == 0.0f)
                 center[0] = (i - (count - 1) * 0.5f) * 1.6f;
