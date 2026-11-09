@@ -563,6 +563,12 @@ zone = partId >> 4   （0=中心, 2=胴, 8=右腕, 9=左腕, 10=右足, 11=左�
 [shot] part inst=9 chunk=g006 partId=0x080 zone=8 -> bone=68
 [shot] part inst=4 chunk=g000 partId=0x000 zone=0 -> bone=58
 ```
+
+**既定化（2026-11-09）**: `--model` を指定し、`--bone`（単一骨）も `--bone-map` も
+指定しない場合は **自動的に `part`** を使う（`--bone` 指定時は従来どおり単一骨）。
+無モデル（`--shot <dat>`）のゴールデンには影響しない。
+
+実測（`--model human --motion idl0` / `11\18` / 90 フレーム）: **4,446 / 765**（`mapped=11/11`）。
 ---
 
 ## 11. 参考: cosmosa.jp「ジェネレーター解析」（2007）との突き合わせ

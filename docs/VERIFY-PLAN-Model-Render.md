@@ -269,6 +269,9 @@ Select-String -Path effecttest_log.txt -Pattern 'part inst='
 - ログ: `partId=0x000 zone=0 -> bone=58`（中心 9 件）、`partId=0x080 zone=8 -> bone=68`（右腕 2 件）
 - 90 フレーム = **5,122 / 455**、180 フレーム（`--bg 40F0F0`）= **5,280 / 544**
 - 比較: 単一骨 4,429 / 692、`auto` 8,513 / 748 → `part` が**参照に最も近い**
+- **既定**: `--model` 指定かつ `--bone`/`--bone-map` 未指定なら自動で `part`
+  （`--model human --motion idl0` の 90 フレームで **4,446 / 765**、`mapped=11/11`）
+- 無モデル（`--shot <dat>`）のゴールデンは**不変**（3,625 / 3,098 / 6,521 / 3,628）
 
 ## 3. 失敗時の切り分け
 

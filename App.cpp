@@ -1414,6 +1414,7 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
         char motion[MAX_PATH] = {};
         char boneMap[MAX_PATH] = {};                // --bone-map "0:10,1:20"
         bool boneSpecified = false;                 // モデル（human）を要するか
+        bool boneExplicit  = false;                 // --bone（単一骨）が明示されたか
         bool boneOnly = false;                      // --bone が明示されたか（全体ルート）
         int  frames = 90;                       // 既定 90 フレーム（1.5 s）
 
@@ -1464,6 +1465,7 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
                 g_RootBone = atoi(n);
                 boneSpecified = true;
                 boneOnly = true;
+                boneExplicit = true;
                 continue;
             }
 
@@ -1627,6 +1629,13 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
         if (model[0] == '\0' && boneSpecified)
             strncpy_s(model, "human", _TRUNCATE);       // --bone だけなら基準モデル（human）を使う
 
+        // モデルに載せる場合の既定は「部位 ID から骨を決める」（--bone 単一指定が無いとき）
+        //   データ2 op 0x01 の +0x06（部位 ID）→ 骨。無モデル時のゴールデンには影響しない
+        char boneMapUse[MAX_PATH] = {};
+        strncpy_s(boneMapUse, boneMap, _TRUNCATE);
+        if (boneMapUse[0] == '\0' && !boneExplicit && model[0] != '\0')
+            strncpy_s(boneMapUse, "part", _TRUNCATE);
+
         char mpath[MAX_PATH] = {};
         if (model[0] != '\0')
         {
@@ -1681,8 +1690,8 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
             g_InstMats.assign(n * 16, 0.0f);
             g_InstHasBone.assign(n, 0);
 
-            const char* s = boneMap;
-            if (_stricmp(boneMap, "part") == 0)
+            const char* s = boneMapUse;
+            if (_stricmp(boneMapUse, "part") == 0)
             {
                 // 部位 ID（op 0x01 の +0x06）→ 骨を推定して割り当てる
                 //   参考: 0x001/0x011=中心, 0x021=胴, 0x081=右腕, 0x091=左腕,
@@ -1739,7 +1748,7 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
                         i, g_Effect.Instances()[i].gen->chunk.name, pid, (pid >> 4), b);
                 }
             }
-            else if (_stricmp(boneMap, "auto") == 0)
+            else if (_stricmp(boneMapUse, "auto") == 0)
             {
                 // 体軸（Y）に沿って均等に骨を割り当てる（根拠: 参照動画は体の各所に炎が付く）
                 //   0.05〜1.75 m の範囲に入る骨を Y で並べ、インスタンス数で等分する
@@ -1795,7 +1804,7 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
 
             int mapped = 0;
             for (char f : g_InstHasBone) if (f) ++mapped;
-            Log("[shot] bone-map=%s mapped=%d inst=%zu", boneMap, mapped, n);
+            Log("[shot] bone-map=%s mapped=%d inst=%zu", boneMapUse, mapped, n);
         }
 
         // 描画入力のダンプ（原因切り分け用）
