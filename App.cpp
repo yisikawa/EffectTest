@@ -147,6 +147,7 @@ static void Log(const char* fmt, ...)
 static bool FindFFXI(char* out, size_t outSize)
 {
     const char* keys[] = {
+
         "SOFTWARE\\WOW6432Node\\PlayOnlineUS\\InstallRoot",
         "SOFTWARE\\PlayOnlineUS\\InstallRoot",
         "SOFTWARE\\WOW6432Node\\PlayOnline\\InstallRoot",
@@ -188,6 +189,27 @@ static bool FindFFXI(char* out, size_t outSize)
         }
     }
     return false;
+}
+
+//----------------------------------------------------------------------
+// モデル DAT の解決
+//   "human" / "0-27-82" → <FFXI>\ROM\27\82.DAT（PC ヒュームの基準モデル）
+//   List の ID 規則（ListDb::ResolvePath）と同じ: rom<=1 は ROM\<hi>\<lo>.DAT
+//----------------------------------------------------------------------
+static bool ResolveModelPath(const char* arg, char* out, size_t outSize)
+{
+    if (arg == nullptr || arg[0] == '\0') return false;
+
+    if (_stricmp(arg, "human") == 0 || strcmp(arg, "0-27-82") == 0)
+    {
+        char base[MAX_PATH] = {};
+        if (!FindFFXI(base, sizeof(base))) return false;
+        sprintf_s(out, outSize, "%s\\ROM\\27\\82.DAT", base);
+        return true;
+    }
+
+    strncpy_s(out, outSize, arg, _TRUNCATE);
+    return true;
 }
 
 //----------------------------------------------------------------------
@@ -1089,6 +1111,10 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
         if (!NextToken(p, mo, MAX_PATH)) mo[0] = '\0';
         if (!NextToken(p, rot, MAX_PATH)) rot[0] = '\0';
 
+        // "human" / "0-27-82" を実パスへ（基準モデル）
+        char real[MAX_PATH] = {};
+        if (ResolveModelPath(path, real, MAX_PATH)) strncpy_s(path, real, _TRUNCATE);
+
         DatFile dat;
         if (!dat.Load(path)) { Log("[skel] load failed: %s", path); return 3; }
 
@@ -1286,6 +1312,7 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
         char png[MAX_PATH] = "effecttest_shot.png";
         char model[MAX_PATH] = {};                  // --model: 骨格をエフェクトのルートに使う
         char motion[MAX_PATH] = {};
+        bool boneSpecified = false;
         int  frames = 90;                       // 既定 90 フレーム（1.5 s）
 
         // --blend alpha_add|add|alpha（検証用。省略時は alpha_add）
@@ -1332,6 +1359,7 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
                 char n[MAX_PATH] = {};
                 if (!NextToken(p, n, MAX_PATH)) return 2;
                 g_RootBone = atoi(n);
+                boneSpecified = true;
                 continue;
             }
 
@@ -1413,20 +1441,29 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
         DatFile  mdl;
         Skeleton skel;
         bool     haveSkel = false;
+
+        if (model[0] == '\0' && boneSpecified)
+            strncpy_s(model, "human", _TRUNCATE);       // --bone だけなら基準モデル（human）を使う
+
+        char mpath[MAX_PATH] = {};
         if (model[0] != '\0')
         {
-            if (mdl.Load(model) && skel.Load(mdl))
+            if (!ResolveModelPath(model, mpath, MAX_PATH))
+            {
+                Log("[shot] model resolve failed: %s", model);
+            }
+            else if (mdl.Load(mpath) && skel.Load(mdl))
             {
                 haveSkel = true;
                 if (motion[0] != '\0' && !skel.SetMotion(motion))
                     Log("[shot] model motion not found: %s", motion);
                 Log("[shot] model=%s bones=%d motions=%zu motion=%s rot=%s bone=%d",
-                    model, skel.BoneCount(), skel.MotionCount(),
+                    mpath, skel.BoneCount(), skel.MotionCount(),
                     (motion[0] != '\0') ? motion : "(rest)", skel.RootModeName(), g_RootBone);
             }
             else
             {
-                Log("[shot] model load failed: %s", model);
+                Log("[shot] model load failed: %s", mpath);
             }
         }
 

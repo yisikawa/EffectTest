@@ -113,6 +113,21 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\ShotStats.ps1 -Path 
 - `[shot] root bone=10 pos=(-0.020,0.016,0.260)`
 - 非背景 **2,167**（`--model` なしは **2,694**、`--bone 0` は 458＝`mirrorY` で Y 反転）
 
+### V-M10 基準モデル human の自動解決
+
+```powershell
+Start-Process $exe -ArgumentList @('--skel','human','idl0') -Wait
+Select-String -Path effecttest_log.txt -Pattern '^\[skel\] dat=|^\[skel\] rest'
+```
+期待: `[skel] dat=…\ROM\27\82.DAT bones=94 motions=130 rot=mirrorY`、`rest … last=(0.000,0.090,1.000)`
+
+```powershell
+# --bone だけ指定 → human が自動で使われる
+Start-Process $exe -ArgumentList @('--shot','--bone','10','--motion','idl0',('"'+$ROM+'\11\18.DAT"'),'m_h10.png') -Wait
+Select-String -Path effecttest_log.txt -Pattern '^\[shot\] model=|^\[shot\] root'
+```
+期待: `model=…\ROM\27\82.DAT bones=94 motions=130 … bone=10`、`root bone=10 pos=(-0.034,-1.063,-0.059)`、非背景 **452**
+
 ## 3. 失敗時の切り分け
 
 | 症状 | 疑う箇所 | 確認 |
