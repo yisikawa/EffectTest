@@ -854,6 +854,7 @@ static int RunSelfTest(const char* path)
     fprintf(fp, "size      = %u bytes\n", dat.Size());
     fprintf(fp, "chunks    = %zu\n", dat.Chunks().size());
     fprintf(fp, "generators= %zu\n", eff.Generators().size());
+    fprintf(fp, "prog      = 0x%X\n", eff.ProgStart());
 
     for (const GeneratorBlock& g : eff.Generators())
     {

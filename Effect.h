@@ -145,6 +145,7 @@ public:
     const std::vector<MotionInstance>& Instances()  const { return m_Instances; }
     const std::vector<TimTexture>&     Textures()   const { return m_Textures; }
 
+    uint32_t ProgStart() const { return m_ProgStart; }
     size_t   Ip()       const { return m_Ip; }
     float    TimeLeft() const { return m_TimeLeft; }
     float    Duration() const { return m_Duration; }
@@ -172,6 +173,7 @@ private:
     std::vector<TimTexture>     m_Textures;
     std::vector<std::string>    m_TexNames;   // 0x20 チャンク名（チャンク順。texIndex の基準）
 
+    uint32_t m_ProgStart = 0;   // 0x07 の命令列開始（+0x50 固定）
     size_t   m_Ip       = 0;
     float    m_TimeLeft = 0.0f;
     float    m_Duration = 0.0f;

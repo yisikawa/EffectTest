@@ -49,6 +49,7 @@ bool EffectContext::BuildInternal(const DatFile& dat, const char* mainChunkName)
     m_TexNames.clear();
     m_Instances.clear();
     m_Duration = 0.0f;
+    m_ProgStart = 0;
 
     //--------------------------------------------------------------
     // 1) ジェネレータ（type 0x05）索引
@@ -102,6 +103,7 @@ bool EffectContext::BuildInternal(const DatFile& dat, const char* mainChunkName)
         // 0x07 の命令列は +0x50 から始まる（Effect / NPC 共通。解析 §8 / 設計 §4.8.2）
         //   実測: 1,848 チャンク中 1,806（97.7%）が +0x50 から len==0 で正常終端
         const uint32_t progStart = 0x50;
+        m_ProgStart = progStart;
         if (mainChunk->size <= progStart)
         {
             Reset();
