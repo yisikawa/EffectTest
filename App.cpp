@@ -46,6 +46,7 @@ namespace
     bool  g_NoTexture = false;    // W: テクスチャを使わず白で描く（デバッグ）
     bool  g_ShowAxes  = false;    // X: 座標軸の表示（既定 OFF。起動時は何も描かない）
     float g_SizeScale = 1.0f;     // ビルボードの基準半径
+int   g_SizeMode  = 0;        // 0: scale / 1: 0x21 quad / 2: 正方形（scale[2]）
 float g_ClearColor[4] = { 0.05f, 0.06f, 0.09f, 1.0f };   // --bg で変更（参照動画と合わせる用）
     int   g_TexIndex  = 0;
 
@@ -403,7 +404,7 @@ static void RenderScene(bool present)
         // 0x21 クワッドのローカル範囲（±2 など）を寸法に使う場合（--size quad）
         float halfW = g_SizeScale * sx;
         float halfH = g_SizeScale * sy2;
-        if (g_Effect.QuadSize() && mi.quadHalf[0] > 0.0f && mi.quadHalf[1] > 0.0f)
+        if (g_SizeMode == 1 && mi.quadHalf[0] > 0.0f && mi.quadHalf[1] > 0.0f)
         {
             halfW = g_SizeScale * mi.quadHalf[0] * sx;
             halfH = g_SizeScale * mi.quadHalf[1] * sy2;
@@ -412,6 +413,13 @@ static void RenderScene(bool present)
             center[0] += right[0] * mi.quadCenter[0] + up[0] * mi.quadCenter[1];
             center[1] += right[1] * mi.quadCenter[0] + up[1] * mi.quadCenter[1];
             center[2] += right[2] * mi.quadCenter[0] + up[2] * mi.quadCenter[1];
+        }
+        else if (g_SizeMode == 2)
+        {
+            // 正方形ビルボード（ワイヤーフレーム参照に合わせる）: scale[2] を両軸に使う
+            const float su = (s[2] > 0.001f) ? s[2] : 1.0f;
+            halfW = g_SizeScale * su;
+            halfH = g_SizeScale * su;
         }
 
         const float axisR[3] = { right[0] * halfW, right[1] * halfW, right[2] * halfW };
@@ -1215,12 +1223,22 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
                 continue;
             }
 
+            if (_stricmp(tok, "--scale") == 0)
+            {
+                char num[MAX_PATH] = {};
+                if (!NextToken(p, num, MAX_PATH)) return 2;
+                const double f = atof(num);
+                if (f > 0.0) g_SizeScale = (float)f;
+                continue;
+            }
+
             if (_stricmp(tok, "--size") == 0)
             {
                 char mode[MAX_PATH] = {};
                 if (!NextToken(p, mode, MAX_PATH)) return 2;
-                if      (_stricmp(mode, "quad") == 0) g_Effect.SetQuadSize(true);
-                else if (_stricmp(mode, "scale") == 0) g_Effect.SetQuadSize(false);
+                if      (_stricmp(mode, "quad")   == 0) g_SizeMode = 1;
+                else if (_stricmp(mode, "square") == 0) g_SizeMode = 2;
+                else if (_stricmp(mode, "scale")  == 0) g_SizeMode = 0;
                 else { Log("[shot] unknown size: %s", mode); return 2; }
                 continue;
             }
@@ -1304,7 +1322,7 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
             dat, png, GfxBlendModeName(GfxGetBlendMode()),
             g_Effect.UseTexFrames() ? "0x21" : "full",
             GfxGetColorSwap() ? "bgr" : "rgb",
-            g_Effect.QuadSize() ? "quad" : "scale", frames,
+            g_SizeMode == 1 ? "quad" : (g_SizeMode == 2 ? "square" : "scale"), frames,
             g_Effect.Instances().size(), g_Effect.Textures().size(), ok ? 1 : 0);
 
         g_Effect.ReleaseTextures();
