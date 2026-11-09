@@ -164,7 +164,7 @@ public:
     const std::vector<MotionInstance>& Instances()  const { return m_Instances; }
     const std::vector<TimTexture>&     Textures()   const { return m_Textures; }
 
-    // 0x21（テクスチャフレーム）の UV 適用（実験的・既定 OFF）
+    // 0x21（テクスチャフレーム）の UV 適用（既定 ON。--uv full で従来動作）
     void SetUseTexFrames(bool on) { m_UseTexFrames = on; }
     bool UseTexFrames() const { return m_UseTexFrames; }
 
@@ -222,7 +222,7 @@ private:
     bool     m_Loop     = true;
     float    m_Speed    = 1.0f;
     uint8_t  m_LastColor[4] = { 255, 255, 255, 255 };
-    bool     m_UseTexFrames = false;    // 0x21 の UV 適用（実験的）
+    bool     m_UseTexFrames = true;     // 0x21 の UV 適用（--uv full で無効化）
 
     TimTexture m_WhiteTex;
 };

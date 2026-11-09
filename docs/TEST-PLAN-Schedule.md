@@ -81,9 +81,9 @@
 
 | ID | 手順 | 期待 | 自動 |
 |---|---|---|---|
-| T-09 | `--shot "…\11\17.DAT" out_fire.png` | `[shot] ... blend=alpha_add inst=8 tex=5 ok=1`、非背景 **7,950** / maxSum **686**（4px 間引き 57,600 点） | △（GPU 必須） |
-| T-09b | `--shot "…\11\18.DAT" out_fire2.png` | `ok=1` ＆ 非背景 **3,701** / maxSum 725（修正前は 0） | △ |
-| T-16 | `--shot --uv 0x21 "…\11\18.DAT"` | `uvmode=0x21`、非背景 **2,947** / maxSum 725（既定 `full` は 3,701） | △ |
+| T-09 | `--shot "…\11\17.DAT" out_fire.png` | `[shot] ... blend=alpha_add uvmode=0x21 inst=8 tex=5 ok=1`、非背景 **7,968** / maxSum **686**（4px 間引き 57,600 点） | △（GPU 必須） |
+| T-09b | `--shot "…\11\18.DAT" out_fire2.png` | `ok=1` ＆ 非背景 **2,947** / maxSum 725（修正前は 0） | △ |
+| T-16 | `--shot --uv full "…\11\18.DAT"` | `uvmode=full`、非背景 **3,701**（既定 `0x21` は 2,947） | △ |
 
 ### T4 UI 手動
 
