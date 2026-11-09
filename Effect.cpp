@@ -148,18 +148,37 @@ static bool ParseGeometry(const DatFile& dat, const char* name4, GeneratorBlock&
         g.geoUV[0] = 0.0f; g.geoUV[1] = 0.0f; g.geoUV[2] = 1.0f; g.geoUV[3] = 1.0f;
     }
 
-    // テクスチャ名（16 B 間隔のリストのうち、0x20 に実在する最初のもの）
-    for (uint32_t off = need; off + 8 <= c->size; off += 16)
+    // テクスチャ名（AltanaView FUN_0040b9d0 と同じ走査）
+    //   u16 配列 (+0x18, shapes 個) の後を 4 バイト境界に揃え、2 バイトずつ進めて
+    //   「2 バイトとも印字可能」な位置を名前の開始とし、以降 16 バイト間隔で names 個読む
     {
-        char nm[9] = {};
-        memcpy(nm, p + off, 8);
-        nm[8] = '\0';
-        for (int i = 7; i >= 0 && (nm[i] == ' ' || nm[i] == '\0'); --i) nm[i] = '\0';
-        if (nm[0] == '\0') continue;
-        if (dat.Find(nm, 0x20) != nullptr)
+        const int names = (int)p[0x14];
+        uint32_t q0 = 0x18u + (uint32_t)shapes * 2u;
+        q0 = (q0 + 3u) & ~3u;
+
+        uint32_t nmOff = 0;
+        for (uint32_t q = q0; q + 2u <= c->size; q += 2u)
         {
-            strncpy_s(g.geoName, nm, _TRUNCATE);
-            break;
+            if (p[q] > 0x1F && p[q] < 0x7F && p[q + 1] > 0x1F && p[q + 1] < 0x7F)
+            {
+                nmOff = q;
+                break;
+            }
+        }
+
+        for (int i = 0; i < names && nmOff != 0; ++i)
+        {
+            const uint32_t o = nmOff + (uint32_t)i * 16u;
+            if (o + 4u > c->size) break;
+            char nm[5] = {};
+            memcpy(nm, p + o, 4);
+            nm[4] = '\0';
+            if (nm[0] == '\0') continue;
+            if (dat.Find(nm, 0x20) != nullptr || dat.Find(nm, 0x21) != nullptr)
+            {
+                strncpy_s(g.geoName, nm, _TRUNCATE);
+                break;
+            }
         }
     }
     return true;
