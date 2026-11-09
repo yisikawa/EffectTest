@@ -24,11 +24,11 @@ Start-Sleep -Milliseconds 300
 Select-String -Path effecttest_log.txt -Pattern '^\[skel\]'
 ```
 期待（実測値）:
-- `[skel] … bones=56 motions=18`
-- `[skel] motion idl0 dur=0.3500s keys=15`（ほか `cor0` 1.00s/2keys、`ded0` 0.50s/26keys 等 18 件）
-- `[skel] rest t=0.000 root=(0.000,0.000,0.000) last=(-0.187,-0.306,-0.525)`
-- `motion=idl0` の 3 行で `mid` が **(-0.471)→(-0.473)→(-0.475)** と変化（時間で姿勢が変わる）
-- エフェクト回帰は不変（`11\17` = 8,050 / 348）
+- `[skel] … bones=56 motions=18 rot=mirrorY`（既定のルート変換は ModelTest と同じ `matrixMirrorY`）
+- `[skel] rest t=0.000 root=(0.000,0.000,0.000) last=(-0.187,0.306,-0.525)`（`mirrorY` 適用後。bone1 は y=+1.151）
+- `motion=idl0` の 3 行で `mid` が変化（時間で姿勢が変わる）
+- ルート変換の比較: `--skel "<dat>" idl0 none|mirrorY|rotX180|rotZ180`（`rot=` が切り替わる）
+- エフェクト回帰は不変（`11\17` = 8,050 / 348、`12\43` = `subtl=1`）
 
 > `--skel` は GPU 不要。骨・モーションの読込だけを検証する。
 
@@ -112,4 +112,4 @@ foreach ($d in '11\17.DAT','11\18.DAT','11\22.DAT','12\43.DAT','162\50.DAT') {
 
 | 実施日 | ビルド | V-M01 | V-M02 | V-M03 | V-M04 | V-M05 | V-M06 | V-M07 | V-M08 | 備考 |
 |---|---|---|---|---|---|---|---|---|---|---|
-| 2026-11-09 | Release x64 | ✅ | — | — | — | — | — | — | — | **P1a 完了**: `--skel` で bones=56 / motions=18、`idl0` で姿勢変化、エフェクト回帰 8,050/348 不変 |
+| 2026-11-09 | Release x64 | ✅ | — | — | — | — | — | — | — | **P1a 完了**: `--skel` で bones=56 / motions=18、ルート変換 `mirrorY`（ModelTest の `matrixMirrorY`）で bone1 y=+1.151、エフェクト回帰 8,050/348 不変 |

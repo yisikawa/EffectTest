@@ -195,6 +195,19 @@ void Skeleton::Update(float timeSec)
 }
 
 //----------------------------------------------------------------------
+const char* Skeleton::RootModeName() const
+{
+    switch (m_RootMode)
+    {
+    case ROOT_NONE:       return "none";
+    case ROOT_MIRROR_Y:   return "mirrorY";
+    case ROOT_ROT_X180:   return "rotX180";
+    case ROOT_ROT_Z180:   return "rotZ180";
+    default:              return "?";
+    }
+}
+
+//----------------------------------------------------------------------
 void Skeleton::EvalBone(int i, float pct)
 {
     const SkelBone& b = m_Bones[i];
@@ -252,9 +265,20 @@ void Skeleton::EvalBone(int i, float pct)
 
     const XMMATRIX L = Rest * Mo;
 
+    // ルート変換（ModelTest は全ボーンに matrixMirrorY を掛けるが、
+    // 親の world を先に合成しているため「根に 1 回掛ける」のと等価）
+    XMMATRIX Root = XMMatrixIdentity();
+    switch (m_RootMode)
+    {
+    case ROOT_MIRROR_Y: Root = XMMatrixScaling(1.0f, -1.0f, 1.0f); break;
+    case ROOT_ROT_X180: Root = XMMatrixRotationX(XM_PI);           break;
+    case ROOT_ROT_Z180: Root = XMMatrixRotationZ(XM_PI);           break;
+    default: break;
+    }
+
     const XMMATRIX W = (b.parent >= 0)
                      ? L * XMLoadFloat4x4(reinterpret_cast<const XMFLOAT4X4*>(&m_World[(size_t)b.parent * 16]))
-                     : L;
+                     : L * Root;
 
     XMStoreFloat4x4(reinterpret_cast<XMFLOAT4X4*>(&m_Local[(size_t)i * 16]), L);
     XMStoreFloat4x4(reinterpret_cast<XMFLOAT4X4*>(&m_World[(size_t)i * 16]), W);

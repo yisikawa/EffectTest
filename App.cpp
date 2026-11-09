@@ -1064,8 +1064,10 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
         char* p = lpCmdLine + 6;
         char path[MAX_PATH] = {};
         char mo[MAX_PATH]   = {};
+        char rot[MAX_PATH]  = {};
         if (!NextToken(p, path, MAX_PATH)) return 2;
         if (!NextToken(p, mo, MAX_PATH)) mo[0] = '\0';
+        if (!NextToken(p, rot, MAX_PATH)) rot[0] = '\0';
 
         DatFile dat;
         if (!dat.Load(path)) { Log("[skel] load failed: %s", path); return 3; }
@@ -1073,7 +1075,13 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
         Skeleton sk;
         if (!sk.Load(dat)) { Log("[skel] no skeleton (0x29): %s", path); return 4; }
 
-        Log("[skel] dat=%s bones=%d motions=%zu", path, sk.BoneCount(), sk.MotionCount());
+        if      (_stricmp(rot, "none")    == 0) sk.SetRootMode(Skeleton::ROOT_NONE);
+        else if (_stricmp(rot, "mirrory") == 0) sk.SetRootMode(Skeleton::ROOT_MIRROR_Y);
+        else if (_stricmp(rot, "rotx")    == 0) sk.SetRootMode(Skeleton::ROOT_ROT_X180);
+        else if (_stricmp(rot, "rotz")    == 0) sk.SetRootMode(Skeleton::ROOT_ROT_Z180);
+
+        Log("[skel] dat=%s bones=%d motions=%zu rot=%s",
+            path, sk.BoneCount(), sk.MotionCount(), sk.RootModeName());
         for (size_t i = 0; i < sk.MotionCount(); ++i)
         {
             Log("[skel] motion %-4s dur=%.4fs keys=%d",

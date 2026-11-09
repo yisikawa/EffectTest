@@ -69,6 +69,19 @@ public:
     bool SetMotion(const char* name4);            // 名前（4 文字）で選択。空文字で解除
     int  CurrentMotion() const { return m_Current; }
 
+    // ルート変換（ModelTest の m_mRootTransform 相当）。
+    //   ModelTest は既定で matrixMirrorY = diag(1,-1,1) を全ボーンに掛ける（左手系合わせ）。
+    enum RootMode
+    {
+        ROOT_NONE = 0,        // 変換なし（DAT の生の値）
+        ROOT_MIRROR_Y = 1,    // diag(1,-1,1)    ← ModelTest の既定
+        ROOT_ROT_X180 = 2,    // X 軸 180 度（右手系を保ったまま上下反転）
+        ROOT_ROT_Z180 = 3,    // Z 軸 180 度
+    };
+    void SetRootMode(int mode) { m_RootMode = mode; Update(m_Time); }
+    int  RootMode() const { return m_RootMode; }
+    const char* RootModeName() const;
+
     void Update(float timeSec);                   // モーション適用 → ワールド行列
 
     const float* Local(int bone) const;           // 16 floats（行優先）
@@ -86,4 +99,5 @@ private:
     std::vector<float>      m_World;              // [bone*16]
     int                     m_Current = -1;
     float                   m_Time    = 0.0f;
+    int                     m_RootMode = ROOT_MIRROR_Y;   // 既定 = ModelTest の matrixMirrorY
 };
