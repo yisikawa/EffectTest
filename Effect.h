@@ -3,7 +3,7 @@
 //  Effect.h : エフェクト DAT モデル（タイムライン / ジェネレータ / サブオブジェクト）
 //
 //  AltanaView 0.6.2 の解析結果に基づく実装。
-//    main (type 0x07)        : タイムライン命令列（+0x80 起点）
+//    timeline (type 0x07)    : 命令列（+0x50 起点、len==0 で終端）
 //    generator (type 0x05)   : 0x90 バイトヘッダ + ペイロード（VM プログラム）
 //    sub object (0x108 + N)  : VM の出力先（pos/scale/color/経過時間/差分）
 //

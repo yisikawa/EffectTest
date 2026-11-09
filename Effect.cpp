@@ -35,46 +35,10 @@ bool EffectContext::BuildFromChunk(const DatFile& dat, const char* chunk4)
 }
 
 //======================================================================
-//  0x07 ブロックの命令列開始オフセットを自動判定する
-//   エフェクトの "main" は +0x80、NPC の 0x07（atk0 等）は +0x50 から始まる。
-//   候補ごとに命令列を走査し「正常終端し、命令数が最も多い」ものを採用する。
+//  0x07 ブロックの命令列位置
+//    Effect / NPC 共通で **+0x50 から**始まり、len==0 で終端する
+//    （2026-11-09 解析: 1,848 チャンク中 1,806（97.7%）が +0x50 から正常終端）
 //======================================================================
-static uint32_t DetectProgramStart(const DatFile& dat, const DatChunk& c)
-{
-    static const uint32_t cand[] = { 0x80, 0x50, 0x40, 0x60, 0x70, 0x90, 0xA0 };
-
-    uint32_t best = 0;
-    int bestScore = -1;
-
-    for (uint32_t off : cand)
-    {
-        if (off >= c.size) continue;
-
-        uint32_t pos = c.offset + off;
-        const uint32_t end = c.End();
-        int n = 0;
-        bool ok = false;
-
-        while (pos + 8 <= end && n < 1024)
-        {
-            const uint8_t* p = dat.At(pos);
-            if (p == nullptr) break;
-
-            const uint8_t op  = p[0];
-            const uint8_t len = p[1] & 0x1F;
-
-            if (op == 0x00) { ok = (n > 0); break; }
-            if (len == 0)   { ok = (n > 0); break; }
-
-            ++n;
-            pos += (uint32_t)len * 4;
-        }
-        if (pos == end) ok = (n > 0);            // チャンク末尾まで到達
-
-        if (ok && n > bestScore) { bestScore = n; best = off; }
-    }
-    return best;
-}
 
 bool EffectContext::BuildInternal(const DatFile& dat, const char* mainChunkName)
 {
@@ -128,17 +92,13 @@ bool EffectContext::BuildInternal(const DatFile& dat, const char* mainChunkName)
 
     if (mainChunk != nullptr)
     {
-        // エフェクトの "main" は +0x80 が実測済みの正解。
-        // それ以外（NPC の 0x07 アクション等）は自動判定する。
-        uint32_t progStart;
-        if (memcmp(mainChunk->name, "main", 4) == 0)
+        // 0x07 の命令列は +0x50 から始まる（Effect / NPC 共通。解析 §8 / 設計 §4.8.2）
+        //   実測: 1,848 チャンク中 1,806（97.7%）が +0x50 から len==0 で正常終端
+        const uint32_t progStart = 0x50;
+        if (mainChunk->size <= progStart)
         {
-            progStart = 0x80;
-        }
-        else
-        {
-            progStart = DetectProgramStart(dat, *mainChunk);
-            if (progStart == 0) progStart = 0x80;              // フォールバック
+            Reset();
+            return !m_Generators.empty();
         }
 
         const uint32_t start = mainChunk->offset + progStart;  // 命令列の開始
