@@ -533,37 +533,42 @@ static void RenderScene(bool present)
                 float rgbaG[4] = { c[0], c[1], c[2], c[3] };
                 if (rgbaG[0] == 0.0f && rgbaG[1] == 0.0f && rgbaG[2] == 0.0f)
                     rgbaG[0] = rgbaG[1] = rgbaG[2] = 1.0f;
-                if (rgbaG[3] <= 0.0f) rgbaG[3] = 1.0f;
-
-                for (const GeneratorBlock::GeoQuad& gq : mi.gen->geoQuads)
+                bool drewGeo = false;
+                // α が 0 のときは粒子がフェード済み＝ジオメトリも描かない
+                //   （以前は α を 1 に強制していたため、消えた粒子の板が残っていた）
+                if (rgbaG[3] > 0.0f)
                 {
-                    // 3D の実頂点形状（A/B/C から作った平行四辺形）をそのまま使う
-                    //   0x1F の頂点は実寸（m）なので、インスタンスの Scale は掛けない
-                    //   （Scale はビルボード／0x21 のサイズ側で効く）
-                    float cq[3] = { center[0] + gq.ctr[0],
-                                    center[1] + gq.ctr[1],
-                                    center[2] + gq.ctr[2] };
-                    float aR[3] = { gq.aR[0] * g_SizeScale,
-                                    gq.aR[1] * g_SizeScale,
-                                    gq.aR[2] * g_SizeScale };
-                    float aU[3] = { gq.aU[0] * g_SizeScale,
-                                    gq.aU[1] * g_SizeScale,
-                                    gq.aU[2] * g_SizeScale };
-
-                    if (Mptr != nullptr)
+                    for (const GeneratorBlock::GeoQuad& gq : mi.gen->geoQuads)
                     {
-                        // 位置は w=1、辺ベクトルは w=0 で変換（アフィン）
-                        const XMMATRIX M = XMLoadFloat4x4(reinterpret_cast<const XMFLOAT4X4*>(Mptr));
-                        XMFLOAT3 tmp = {};
-                        XMStoreFloat3(&tmp, XMVector3Transform(XMVectorSet(cq[0], cq[1], cq[2], 1.0f), M));
-                        cq[0] = tmp.x; cq[1] = tmp.y; cq[2] = tmp.z;
-                        XMStoreFloat3(&tmp, XMVector3TransformNormal(XMVectorSet(aR[0], aR[1], aR[2], 0.0f), M));
-                        aR[0] = tmp.x; aR[1] = tmp.y; aR[2] = tmp.z;
-                        XMStoreFloat3(&tmp, XMVector3TransformNormal(XMVectorSet(aU[0], aU[1], aU[2], 0.0f), M));
-                        aU[0] = tmp.x; aU[1] = tmp.y; aU[2] = tmp.z;
-                    }
+                        // 3D の実頂点形状（A/B/C から作った平行四辺形）をそのまま使う
+                        //   0x1F の頂点は実寸（m）なので、インスタンスの Scale は掛けない
+                        //   （Scale はビルボード／0x21 のサイズ側で効く）
+                        float cq[3] = { center[0] + gq.ctr[0],
+                                        center[1] + gq.ctr[1],
+                                        center[2] + gq.ctr[2] };
+                        float aR[3] = { gq.aR[0] * g_SizeScale,
+                                        gq.aR[1] * g_SizeScale,
+                                        gq.aR[2] * g_SizeScale };
+                        float aU[3] = { gq.aU[0] * g_SizeScale,
+                                        gq.aU[1] * g_SizeScale,
+                                        gq.aU[2] * g_SizeScale };
 
-                    GfxDrawQuad(cq, aR, aU, rgbaG, gq.uv, srv);
+                        if (Mptr != nullptr)
+                        {
+                            // 位置は w=1、辺ベクトルは w=0 で変換（アフィン）
+                            const XMMATRIX M = XMLoadFloat4x4(reinterpret_cast<const XMFLOAT4X4*>(Mptr));
+                            XMFLOAT3 tmp = {};
+                            XMStoreFloat3(&tmp, XMVector3Transform(XMVectorSet(cq[0], cq[1], cq[2], 1.0f), M));
+                            cq[0] = tmp.x; cq[1] = tmp.y; cq[2] = tmp.z;
+                            XMStoreFloat3(&tmp, XMVector3TransformNormal(XMVectorSet(aR[0], aR[1], aR[2], 0.0f), M));
+                            aR[0] = tmp.x; aR[1] = tmp.y; aR[2] = tmp.z;
+                            XMStoreFloat3(&tmp, XMVector3TransformNormal(XMVectorSet(aU[0], aU[1], aU[2], 0.0f), M));
+                            aU[0] = tmp.x; aU[1] = tmp.y; aU[2] = tmp.z;
+                        }
+
+                        GfxDrawQuad(cq, aR, aU, rgbaG, gq.uv, srv);
+                        drewGeo = true;
+                    }
                 }
 
                 if (g_TraceFile != nullptr)
@@ -575,7 +580,11 @@ static void RenderScene(bool present)
                             p[0], p[1], p[2], s[0], s[1], s[2],
                             c[0], c[1], c[2], c[3]);
                 }
-                continue;      // 通常の 1 枚描画はスキップ
+                // 0x1F がある generator は形状で描く（ビルボードはスキップ）。
+                //   α=0 の粒子はジオメトリも描かないため、その時間帯は何も出ない
+                //   （例: `11\27` は全粒子 α=0 → `--geo on` では空白。既定描画は
+                //     後述の α 代替（α=1 強制）で見えているだけ）。
+                continue;
             }
 
             if (Mptr != nullptr)
