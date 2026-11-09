@@ -291,7 +291,9 @@ $ROM='C:\Program Files (x86)\PlayOnline\SquareEnix\FINAL FANTASY XI\ROM'
 
 - `op 0x01` の `+0x22`（WORD）を LifeTime（フレーム、60 = 1 秒）として読む
 - 実測値: `11\18 g009`=200、`g006`=90、`g004`=80、`g000`=50、`g005`=60
-- **既定は off**（寿命を短くすると参照より早く消えるため。再出現（`+0x5e`）とセットで要検証）
+- **AltanaView の実測では寿命は `ctx+0x1c8`（エフェクト継続時間）** で、`LifeTime` は使われない
+  （`docs/ANALYSIS-AltanaView-Draw.md` §12）→ `--life` は**非忠実な実験用**として既定 off
+- `--geoflat on` は `bil==0` のインスタンスを `0x1F` の有無に関係なく世界軸で描く
 
 ## 3. 失敗時の切り分け
 

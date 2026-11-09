@@ -473,9 +473,11 @@ static void RenderScene(bool present)
             const float sy2 = (s[1] > 0.001f) ? s[1] : 1.0f;
 
             // 0x1F が地面平面（Y=0 の XZ クワッド）なら、カメラ正対ではなく世界軸で描く
-            //   ※ 既定は無効（--geoflat on で有効）。データの bil=0（平面）を優先する
-            const bool  flat = g_GeoFlat && mi.gen->hasGeo &&
-                               (mi.gen->bil == 0 || mi.gen->geoFlat);
+            //   ※ 既定は無効（--geoflat on で有効）
+            //   データの bil=0（平面）なら 0x1F が無くても平面として描く
+            const bool  flat = g_GeoFlat &&
+                               ((mi.gen->bil == 0) ||
+                                (mi.gen->hasGeo && mi.gen->geoFlat));
             float       wR[3] = { 1.0f, 0.0f, 0.0f };
             float       wU[3] = { 0.0f, 0.0f, 1.0f };
             const float* axR = flat ? wR : right;
