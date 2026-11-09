@@ -107,9 +107,13 @@ static bool ParseGeometry(const DatFile& dat, const char* name4, GeneratorBlock&
 
     const uint32_t start = 0x30;     // 実測: `f101` で 0x30 + count*3*0x24 = 0xDB0（末尾一致）
     const uint32_t stride = 0x24;
-    const uint32_t verts = (uint32_t)shapes * 3u;   // 三角形数 × 3
-    const uint32_t need = start + verts * stride;
-    if (need > c->size) return false;
+    uint32_t verts = (uint32_t)shapes * 3u;             // 三角形数 × 3
+    // チャンクサイズを超える場合は「入る分だけ」読む（未解析領域を頂点として読むのを防ぐ）
+    const uint32_t maxVerts = (c->size > start) ? (uint32_t)((c->size - start) / stride) : 0u;
+    if (maxVerts < 6u) return false;
+    if (verts > maxVerts) verts = maxVerts;
+    verts -= verts % 6u;                                 // 6 頂点（2 三角形）単位に揃える
+    if (verts < 6u) return false;
 
     // 位置は half-float（実測 0x3F00=1.75 / 0xBF00=-1.75）
     auto half2f = [](uint16_t h) -> float
@@ -155,11 +159,13 @@ static bool ParseGeometry(const DatFile& dat, const char* name4, GeneratorBlock&
     const float ex = x1 - x0, ey = y1 - y0, ez = z1 - z0;
 
     // 6 頂点（2 三角形）ごとのサブクワッドを作る（実頂点に近い形状）
+    //   クワッド単位で妥当性を判定し、異常なものだけ捨てる（チャンク全体は捨てない）
     g.geoQuads.clear();
     for (uint32_t s = 0; s + 6u <= verts; s += 6u)
     {
         float qx0 = 1e9f, qy0 = 1e9f, qx1 = -1e9f, qy1 = -1e9f;
         float qu0 = 1e9f, qv0 = 1e9f, qu1 = -1e9f, qv1 = -1e9f;
+        bool  bad = false;
         for (uint32_t v = s; v < s + 6u; ++v)
         {
             const uint8_t* q = p + start + v * stride;
@@ -174,6 +180,7 @@ static bool ParseGeometry(const DatFile& dat, const char* name4, GeneratorBlock&
             float uu = 0.0f, vv = 0.0f;
             memcpy(&uu, q + 0x1A, 4);
             memcpy(&vv, q + 0x1E, 4);
+            if (!(ax > -100.0f && ax < 100.0f && ay > -100.0f && ay < 100.0f)) { bad = true; break; }
             if (ax < qx0) qx0 = ax;
             if (ay < qy0) qy0 = ay;
             if (ax > qx1) qx1 = ax;
@@ -183,43 +190,42 @@ static bool ParseGeometry(const DatFile& dat, const char* name4, GeneratorBlock&
             if (uu > qu1) qu1 = uu;
             if (vv > qv1) qv1 = vv;
         }
-        if (qx1 - qx0 < 1e-5f && qy1 - qy0 < 1e-5f) continue;   // 退化
+        if (bad) continue;
+        const float w = qx1 - qx0, h = qy1 - qy0;
+        if (w < 1e-5f && h < 1e-5f) continue;                    // 退化
+        if (w > 20.0f || h > 20.0f) continue;                     // 異常に大きい
         GeneratorBlock::GeoQuad gq;
-        gq.half[0] = (qx1 - qx0) * 0.5f;
-        gq.half[1] = (qy1 - qy0) * 0.5f;
+        gq.half[0] = w * 0.5f;
+        gq.half[1] = h * 0.5f;
         gq.center[0] = (qx1 + qx0) * 0.5f;
         gq.center[1] = (qy1 + qy0) * 0.5f;
         gq.uv[0] = qu0; gq.uv[1] = qv0; gq.uv[2] = qu1; gq.uv[3] = qv1;
         g.geoQuads.push_back(gq);
     }
+    if (g.geoQuads.empty()) return false;
 
-    // 妥当性ガード: 極端な値を弾く（未解析領域を頂点として読んだ場合の破綻防止）
-    const bool sane = (ex >= 0.01f && ex <= 20.0f) &&
-                      (ey >= -1.0f && ey <= 20.0f) &&
-                      (ez >= -1.0f && ez <= 20.0f) &&
-                      (x0 > -100.0f && x1 < 100.0f) &&
-                      (y0 > -100.0f && y1 < 100.0f) &&
-                      (z0 > -100.0f && z1 < 100.0f);
-    if (!sane) return false;
-
-    g.hasGeo = true;
+    // 代表値は「有効なクワッドの union」から作る（大域 bbox は未解析領域を含みうる）
+    {
+        float hx0 = 1e9f, hy0 = 1e9f, hx1 = -1e9f, hy1 = -1e9f;
+        for (const GeneratorBlock::GeoQuad& gq : g.geoQuads)
+        {
+            const float cx = gq.center[0], cy = gq.center[1];
+            const float ex2 = gq.half[0], ey2 = gq.half[1];
+            if (cx - ex2 < hx0) hx0 = cx - ex2;
+            if (cy - ey2 < hy0) hy0 = cy - ey2;
+            if (cx + ex2 > hx1) hx1 = cx + ex2;
+            if (cy + ey2 > hy1) hy1 = cy + ey2;
+        }
+        g.hasGeo = true;
+        g.geoHalf[0]   = (hx1 - hx0) * 0.5f;
+        g.geoHalf[1]   = (hy1 - hy0) * 0.5f;
+        g.geoCenter[0] = (hx1 + hx0) * 0.5f;
+        g.geoCenter[1] = (hy1 + hy0) * 0.5f;
+    }
 
     // Y がほぼ 0 で XZ に広がる場合は地面平面（デカール）として扱う
     g.geoFlat = (ey < 0.01f && (ex > 0.05f || ez > 0.05f));
-    if (g.geoFlat)
-    {
-        g.geoHalf[0]   = ex * 0.5f;             // 幅（X）
-        g.geoHalf[1]   = ez * 0.5f;             // 奥行（Z）
-        g.geoCenter[0] = (x1 + x0) * 0.5f;
-        g.geoCenter[1] = (z1 + z0) * 0.5f;
-    }
-    else
-    {
-        g.geoHalf[0]   = ex * 0.5f;
-        g.geoHalf[1]   = ey * 0.5f;
-        g.geoCenter[0] = (x1 + x0) * 0.5f;
-        g.geoCenter[1] = (y1 + y0) * 0.5f;
-    }
+
     // UV が退化している場合は全面（0,0,1,1）にフォールバック
     if (u1 - u0 > 1e-4f && v1 - v0 > 1e-4f)
     {
