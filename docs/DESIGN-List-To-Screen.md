@@ -368,8 +368,8 @@ CommitSelection(index):                        // 唯一の確定経路
     Effect グループ:
         Schedule を空・無効化、ラベル "Schedule (-)"、g_Effect.Reset()、g_Paused = false
     NPC グループ:
-        g_ScheduleNames = g_Dat の 0x07 名（チャンク順）
-        Schedule へ LB_ADDSTRING → 先頭を LB_SETCURSEL（自動選択のみ／再生しない）
+        g_ScheduleNames = g_Dat の 0x07 名（チャンク順。**全件**）
+        Schedule へ LB_ADDSTRING → **`main` を既定選択**（無ければ先頭）。自動選択のみ／再生しない
         有効化、ラベル "Schedule (<件数>)"
     UpdateTitle()（EffectTest はタイトル/ログが表示更新点。モデル描画は P1）
 
@@ -515,6 +515,103 @@ needed20 = { link(g) | g ∈ needed05 かつ link(g) が 0x20 }                 
 | 描画 | `--shot` | `11\17`: 非背景 > 6,000。`11\18`・`11\22` も**非ゼロ**（現行実装では 0 になる＝回帰検出） |
 
 > アプリに期待値を出力させると同じバグを共有するため、必要資源の正解は**外部スクリプト側**で算出する（テストの独立オラクル）。
+
+---
+
+### 4.9 エフェクト Schedule の実測カタログ（2026-11-09 走査）
+
+> 解析の詳細: `docs/ANALYSIS-Effect-Resource-Limiting.md` / 走査スクリプト: `%TEMP%\av_eff2\scan2.ps1`（実装時に `tools\EffectRes.ps1` へ統合）
+> 対象: `List/Effect/*.csv` 25 カテゴリ（`index.csv` 3 列目＝ROM。Effect2〜9 は ROM2〜9）
+
+#### 4.9.1 規模
+
+- CSV 行数 **3,745** → 重複除去・DAT 存在 **3,196 件**（DAT 不在 19 件）
+- ROM 別: ROM1 2,725 / ROM3 229 / ROM4 119 / ROM2 41 / ROM6 24 / ROM5 23 / ROM7 18 / ROM8 17
+
+| カテゴリ | 件数 | カテゴリ | 件数 |
+|---|---|---|---|
+| Effect1（FFXI） | 1,549 | SummoningMagic | 108 |
+| Effect3（CoP） | 229 | Song | 106 |
+| WhiteMagic | 195 | Item | 95 |
+| BlueMagic | 189 | Ninjutsu | 42 |
+| Ability | 174 | Effect2（Zilart） | 41 |
+| BlackMagic | 166 | Unknown Effects | 41 |
+| Effect4（Aht Urhgan） | 119 | Corsair / Skillchain / Automaton | 38 / 15 / 7 |
+
+#### 4.9.2 Schedule（`0x07`）の実態 — 走査の主結果
+
+- **81.4%（2,600 / 3,196）が `0x07` を 2 個以上持つ**。`main` だけの効果は少数派。
+- `main` 以外の Schedule 名（出現数）: `tgt0` 454 / `trg0` 400 / `cas0` 362 / `cst0` 295 / `s000` 271 / `tgt1` 254 / `sub0` 194 / `damg` 168 / `cst1` 147 / `hit1` 144 / `atf0` 135 / `sub1` 135 / `vdam` 134 / `mot0` 133 / `hit0` 123
+
+| 例 | Schedule 数 | 名前 |
+|---|---|---|
+| `11/17` Fire | 1 | `main` |
+| `15/89` Berserk | 1 | `main` |
+| `12/43` Foe Requiem | 2 | `main`, `hit1` |
+| `10/9` ru_k | 3 | `main`, `mai0`, `tgt0` |
+| `119/85` Meteor | **5** | `iwa0`, `main`, `ssub`, `iwa1`, `iwa2` |
+| `0/63` Nanaa | 178 | 共有ライブラリ束（971 generator / 52 texture） |
+| `0/61` `btl_` | 81 | 共有ライブラリ束（437 generator / 50 texture） |
+| `0/0` `syst`（base） | 132 | 共有ライブラリ（320 generator / 61 texture） |
+
+→ **設計 §4.7 の Schedule リストは `0x07` を全件列挙し、既定選択は `main`**（先頭行ではなく名前で選ぶ）。
+
+#### 4.9.3 尺（`main` ヘッダ +0x2C のフレーム数、60 fps 基準）
+
+| 尺 | 件数 |
+|---|---|
+| 1–30 コマ（≤0.5 s） | 247 |
+| 31–60 コマ（≤1 s） | 201 |
+| 61–120 コマ（≤2 s） | 603 |
+| **121–240 コマ（≤4 s）** | **1,233** |
+| 241 コマ以上 | 492 |
+| 0（未設定） | 311 |
+| 不明（`0x07` 無し等） | 109 |
+
+例: Fire 200 / Fire II 250 / Blizzard 271 / Meteor 139 / Foe Requiem 160 / Berserk 188。
+※ 尺は**命令列を解析しなくても**ヘッダから取得できる（§4.8.2 の判定が未確定でも表示可能）。
+
+#### 4.9.4 資源規模（限定の妥当性）
+
+| generator 数 | 件数 | | texture 数 | 件数 |
+|---|---|---|---|---|
+| 0 | 350 | | 0 | 140 |
+| 1–4 | 198 | | 1–2 | 274 |
+| 5–8 | 351 | | 3–5 | 815 |
+| 9–16 | 1,274 | | 6–10 | 1,734 |
+| **17 以上** | **1,023** | | 11 以上 | 233 |
+
+`+0xAC` の参照種別（全 generator 合計）:
+
+| 種別 | 件数 |
+|---|---|
+| `0x20`（同 DAT のテクスチャ） | **27,570** |
+| その他（`0x1F` ジオメトリ / `0x21` フレーム / `0x3D` 等） | 13,823 |
+| 空（`....`） | 3,748 |
+| base の `0x20` | 2,582 |
+| `dist`（予約語） | 852 |
+| 未解決（`nulp` ほか） | **1,245 件の DAT が `nulp` を含む** |
+
+→ 1 効果あたり 17 個以上の generator を持つものが 32%。**資源限定の効果は大きい**（base の 320 も同様）。
+
+#### 4.9.5 設計への反映（要点）
+
+1. **Schedule リスト = `0x07` 全件**（§4.7）。既定は `main`。サブ Schedule（`tgt0`/`cas0`/`damg`…）を選べることで AltanaView と同等になる
+2. **尺の表示**はヘッダ `+0x2C` から取得（命令列パース不要）。タイトル/ログに `dur=<frames>/60` を出せる
+3. **資源限定**は意味が大きい（generator 17+ が 1,023 件、texture 6–10 が 1,734 件）
+4. **`nulp` が 1,245 件**（最多の未解決）→ 白テクスチャ代替が常態（R10）。見た目差の主要因になり得る
+5. 命令列の**開始位置は DAT ごとに異なる**。単純な最長一致では誤判定する（実測: Fire を `+0x50`/22 命令と誤判定）→ §4.8.2 の判定は「既知 op ＋ 名前解決 ＋ ヘッダ」を併用し、`--selftest` の `prog=` で検証する
+
+#### 4.9.6 ゴールデン（代表 6 件）
+
+| DAT | 名前 | Schedule | 尺 | gen | tex | `0x20` リンク |
+|---|---|---|---|---|---|---|
+| `11\17` | Fire | 1（main） | 200 | 8 | 5 | 4 |
+| `11\18` | Fire II | 1（main） | 250 | 11 | 7 | 8 |
+| `11\22` | Blizzard | 1（main） | 271 | 14 | 6 | 4 |
+| `12\43` | Foe Requiem | 2（main,hit1） | 160 | 12 | 6 | 8 |
+| `119\85` | Meteor | 5（iwa0,main,ssub,iwa1,iwa2） | 139 | 44 | 6 | 24 |
+| `15\89` | Berserk | 1（main） | 188 | 12 | 3 | 9 |
 
 ---
 
