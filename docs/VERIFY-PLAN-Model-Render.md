@@ -244,7 +244,18 @@ $ROM='C:\Program Files (x86)\PlayOnline\SquareEnix\FINAL FANTASY XI\ROM'
 - `--geoflat on` は XZ 平面（Y=0）を**地面デカール**として世界軸で描く
 - **既定は両方 off**（ゴールデンは off の値）。`0x1F` は妥当性ガード（0.01〜20 m）を通ったものだけ採用
 
-## 3. 失敗時の切り分け
+### V-M18 `op 0x01` の位置オフセット（`partOfs`）
+
+```powershell
+$ROM='C:\Program Files (x86)\PlayOnline\SquareEnix\FINAL FANTASY XI\ROM'
+.\x64\Release\EffectTest.exe --shot --frames 90 "$ROM\11\17.DAT" po_fire.png
+.\x64\Release\EffectTest.exe --shot --frames 90 "$ROM\11\18.DAT" po_fire2.png
+```
+期待（実測値・2026-11-09）:
+- `11\17` = **3,625 / 399**（適用前は 4,481 / 327）
+- `11\18` = **3,098 / 576**（同 4,048 / 576）
+- `12\43` = **3,628 / 257**（同 3,504 / 257）、`11\22` = **6,521 / 247**（不変）
+- `データ2 op 0x01` の `+0x10/+0x14/+0x18`（±10 m 以内）をインスタンス位置へ加算（`hasPartOfs`）
 
 ## 3. 失敗時の切り分け
 
