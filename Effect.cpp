@@ -236,38 +236,15 @@ static bool ParseGeometry(const DatFile& dat, const char* name4, GeneratorBlock&
         g.geoUV[0] = 0.0f; g.geoUV[1] = 0.0f; g.geoUV[2] = 1.0f; g.geoUV[3] = 1.0f;
     }
 
-    // テクスチャ名（AltanaView FUN_0040b9d0 と同じ走査）
-    //   u16 配列 (+0x18, shapes 個) の後を 4 バイト境界に揃え、2 バイトずつ進めて
-    //   「2 バイトとも印字可能」な位置を名前の開始とし、以降 16 バイト間隔で names 個読む
+    // テクスチャ名: 0x1E に 8 文字×2（グループ名 + specific 名）＝ 0x20 の 16 バイト名と同じ
+    //   実測: 'fire'  → "fire1   " + "fire16  "
+    //         'f101'  → "firef1  " + "f10f    "
     {
-        const int names = (int)p[0x14];
-        uint32_t q0 = 0x18u + (uint32_t)shapes * 2u;
-        q0 = (q0 + 3u) & ~3u;
-
-        uint32_t nmOff = 0;
-        for (uint32_t q = q0; q + 2u <= c->size; q += 2u)
-        {
-            if (p[q] > 0x1F && p[q] < 0x7F && p[q + 1] > 0x1F && p[q + 1] < 0x7F)
-            {
-                nmOff = q;
-                break;
-            }
-        }
-
-        for (int i = 0; i < names && nmOff != 0; ++i)
-        {
-            const uint32_t o = nmOff + (uint32_t)i * 16u;
-            if (o + 4u > c->size) break;
-            char nm[5] = {};
-            memcpy(nm, p + o, 4);
-            nm[4] = '\0';
-            if (nm[0] == '\0') continue;
-            if (dat.Find(nm, 0x20) != nullptr || dat.Find(nm, 0x21) != nullptr)
-            {
-                strncpy_s(g.geoName, nm, _TRUNCATE);
-                break;
-            }
-        }
+        memcpy(g.geoName16, p + 0x1E, 16);
+        g.geoName16[16] = '\0';
+        memcpy(g.geoName, p + 0x1E, 8);
+        g.geoName[8] = '\0';
+        for (int i = 7; i >= 0 && (g.geoName[i] == ' ' || g.geoName[i] == '\0'); --i) g.geoName[i] = '\0';
     }
     return true;
 }
@@ -732,6 +709,8 @@ void EffectContext::Spawn(const char* name4, float startSec, int op)
     int tex = -1;
     if (g->texName[0] != '\0') tex = FindTextureIndexBySpecific(g->texName);
     if (tex < 0) tex = FindTextureIndex(g->linkName);
+    if (tex < 0 && g->geoName16[0] != '\0') tex = FindTextureIndexBy16(g->geoName16);
+    if (tex < 0 && g->geoName[0] != '\0') tex = FindTextureIndexByGroup(g->geoName);
     if (tex < 0 && g->geoName[0] != '\0') tex = FindTextureIndexBySpecific(g->geoName);
     mi.Reset(m_Dat, g, startSec, tex, op, m_Geo);
 
@@ -783,6 +762,43 @@ int EffectContext::FindTextureIndex(const char* name4) const
     for (size_t i = 0; i < m_TexNames.size(); ++i)
     {
         if (memcmp(m_TexNames[i].c_str(), name4, 4) == 0) return (int)i;
+    }
+    return -1;
+}
+
+// 0x1F の +0x1E（先頭 8 文字＝グループ名）→ 0x20 テクスチャ番号
+//   実測: 0x1F 'fire' = "fire1   "+"fire16  " / 0x20 = "fire1   fire15  " → 前半 8 文字が一致
+int EffectContext::FindTextureIndexByGroup(const char* name8) const
+{
+    if (name8 == nullptr || name8[0] == '\0') return -1;
+    for (size_t i = 0; i < m_Textures.size(); ++i)
+    {
+        const std::string& s = m_Textures[i].name;   // 0x20 の 16 B 名（+17 から）
+        if (s.size() < 8) continue;
+        if (memcmp(s.c_str(), name8, 8) == 0) return (int)i;
+    }
+    return -1;
+}
+
+// 0x1F の +0x1E（16 文字 = グループ 8 + specific 8）→ 0x20 テクスチャ番号
+//   0x20 の 16 B 名とそのまま比較する（実測: "fire1   fire16  " 等）
+int EffectContext::FindTextureIndexBy16(const char* name16) const
+{
+    if (name16 == nullptr || name16[0] == '\0') return -1;
+    for (size_t i = 0; i < m_Textures.size(); ++i)
+    {
+        const std::string& s = m_Textures[i].name;
+        if (s.size() < 16) continue;
+        if (memcmp(s.c_str(), name16, 16) == 0) return (int)i;
+    }
+    // 末尾空白を無視して比較
+    char a[17] = {};
+    memcpy(a, name16, 16);
+    for (int k = 15; k >= 0 && a[k] == ' '; --k) a[k] = '\0';
+    for (size_t i = 0; i < m_Textures.size(); ++i)
+    {
+        const std::string& s = m_Textures[i].name;
+        if (s.size() >= 16 && memcmp(s.c_str(), a, 16) == 0) return (int)i;
     }
     return -1;
 }

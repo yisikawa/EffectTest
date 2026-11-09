@@ -138,7 +138,8 @@ struct GeneratorBlock
         float uv[4]     = { 0.0f, 0.0f, 1.0f, 1.0f };
     };
     std::vector<GeoQuad> geoQuads;
-    char     geoName[9]   = {};   // 0x1F が参照するテクスチャ名（4 文字）
+    char     geoName[9]   = {};   // 0x1F +0x1E の 8 文字（グループ名）
+    char     geoName16[17] = {};  // 0x1F +0x1E の 16 文字（= 0x20 の 16 バイト名と一致）
 
     inline bool HasFrames() const { return !texFrames.empty(); }
 
@@ -252,6 +253,8 @@ public:
     const GeneratorBlock* FindGenerator(const char* name4) const;
     int FindTextureIndex(const char* name4) const;
     int FindTextureIndexBySpecific(const char* name8) const;   // +0xAC のリンク名 → 0x20 の番号（無ければ -1）
+    int FindTextureIndexBy16(const char* name16) const;        // 0x1F の 16 文字名 → 0x20 の番号
+    int FindTextureIndexByGroup(const char* name8) const;      // 0x1F の先頭 8 文字（グループ）→ 0x20
     void SetBaseTexture(const class EffectBase* base) { m_Base = base; }  // base の 0x20 を借用する
     size_t SubTimelineCount() const { return m_Subs.size(); }
     ID3D11ShaderResourceView* TextureSrv(int index) const;
