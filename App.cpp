@@ -47,6 +47,7 @@ namespace
     bool  g_NoTexture = false;    // W: テクスチャを使わず白で描く（デバッグ）
     bool  g_ShowAxes  = false;    // X: 座標軸の表示（既定 OFF。起動時は何も描かない）
     float g_SizeScale = 1.0f;     // ビルボードの基準半径
+bool  g_UvScroll  = false;    // UV オフセット（sub+0xB4/0xB8）。0=off / 1=0..1 巡回 / 2=セル内巡回
 int   g_SizeMode  = 0;        // 0: scale / 1: 0x21 quad / 2: 正方形（scale[2]）
 
 // 骨格をエフェクトのルート変換として使う（--model / --motion / --bone）
@@ -519,8 +520,36 @@ static void RenderScene(bool present)
             //     破綻したため未適用。AltanaView は FUN_00401f70 で (v * inst) >> 7 を
             //     行うが、頂点レコード内の色位置は再検証が必要（docs/ANALYSIS-AltanaView-Draw.md §5.2）。
 
-            // UV はそのまま（0xB4/0xB8 のオフセット適用はアトラス内ラップが未実装のため保留）
-            GfxDrawQuad(center, axisR, axisU, rgba, su.uv, srv);
+            // UV オフセット（sub+0xB4 = u, sub+0xB8 = v）。累積値は 0..1 を巡回させる
+            //   ※ 既定は無効（--uvscroll on で有効）。アトラス（4x4 等）では巡回先が
+            //     別セルになるため、見た目はむしろ崩れる（実測）。
+            const float* uvo = su.sub.At(0xB4);
+            float uvDraw[4] = { su.uv[0], su.uv[1], su.uv[2], su.uv[3] };
+            if (g_UvScroll)
+            {
+                const float uw = su.uv[2] - su.uv[0];
+                const float vh = su.uv[3] - su.uv[1];
+                float du = uvo[0];
+                float dv = uvo[1];
+                if (g_UvScroll == 1)          // 0..1 を巡回
+                {
+                    du -= floorf(du);
+                    dv -= floorf(dv);
+                }
+                else                          // セル内を巡回（アトラスの 1 セル分）
+                {
+                    if (uw > 1e-6f) du -= floorf(du / uw) * uw;
+                    if (vh > 1e-6f) dv -= floorf(dv / vh) * vh;
+                }
+                float u0n = su.uv[0] + du;
+                float v0n = su.uv[1] + dv;
+                if (u0n + uw > 1.0f) u0n -= 1.0f;
+                if (v0n + vh > 1.0f) v0n -= 1.0f;
+                uvDraw[0] = u0n; uvDraw[1] = v0n;
+                uvDraw[2] = u0n + uw; uvDraw[3] = v0n + vh;
+            }
+
+            GfxDrawQuad(center, axisR, axisU, rgba, uvDraw, srv);
 
             if (g_TraceFile != nullptr)
             {
@@ -1461,6 +1490,17 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
                 if      (_stricmp(mode, "0x21") == 0) g_Effect.SetUseTexFrames(true);
                 else if (_stricmp(mode, "full") == 0) g_Effect.SetUseTexFrames(false);
                 else { Log("[shot] unknown uv: %s", mode); return 2; }
+                continue;
+            }
+
+            if (_stricmp(tok, "--uvscroll") == 0)
+            {
+                char mode[MAX_PATH] = {};
+                if (!NextToken(p, mode, MAX_PATH)) return 2;
+                if      (_stricmp(mode, "off")  == 0) g_UvScroll = 0;
+                else if (_stricmp(mode, "on")   == 0) g_UvScroll = 1;   // 0..1 を巡回
+                else if (_stricmp(mode, "cell") == 0) g_UvScroll = 2;   // セル内を巡回
+                else { Log("[shot] unknown uvscroll: %s", mode); return 2; }
                 continue;
             }
 

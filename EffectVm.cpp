@@ -252,10 +252,16 @@ static bool Vm2(const MotionInstance& mi, SubUnit& su, float dt, float rootDurat
             }
             break;
 
-        // 注: VM#2 の 0x0F〜0x21 は AltanaView では「角度補間」。
-        //     UV オフセット（0x27/0x28 → スロット 0x2D/0x2E = 0xB4/0xB8）も
-        //     素朴に累積すると UV がアトラス範囲を外れて帯状に破綻するため未適用。
-        //     （アトラス内でラップさせる処理とセットで実装する必要がある）
+        // UV オフセット（AltanaView: `puVar9[op + 6] += k * arg[0]`）
+        //   op 0x27 → スロット 0x2D (=0xB4:u) / op 0x28 → 0x2E (=0xB8:v)
+        //   累積値は 0..1 を巡回させる（描画側で frac して適用）
+        case 0x27:
+        case 0x28:
+            {
+                float* acc = su.sub.At(((uint32_t)op + 6) * 4);
+                acc[0] += k * arg[0];
+            }
+            break;
 
         default:
             break;
