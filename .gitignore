@@ -42,6 +42,7 @@ effecttest_shot_diag.txt
 /fix*.png
 /cyan_*.png
 /na_full_*.png
+/wf_*.png
 /yavg.txt
 /fire2.mp4
 effecttest_trace.csv
