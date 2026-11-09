@@ -45,6 +45,23 @@ effecttest_shot_diag.txt
 /wf_*.png
 /yavg.txt
 /fire2.mp4
+/fire2noalpha.mp4
+/fire2wireframe.mp4
+/m_*.png
+/q_*.png
+/v2_*.png
+/bm*.png
+/sheet.png
+/sq*.png
+/t[0-9]*.png
+/chk_*.png
+/h_*.png
+/m0.png
+/regress.png
+/rg*.png
+/fire_cyan.png
+/Song12-43.gif
+/yavg_noalpha.txt
 effecttest_trace.csv
 
 # ---- 一時 ----
