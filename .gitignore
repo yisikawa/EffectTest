@@ -28,6 +28,12 @@ effecttest_shot_diag.txt
 /effecttest_*.png
 /out_*.png
 /gif_*.png
+/frames/
+/cmp_v_*.png
+/ref_cmp_*.png
+/g_*.png
+/yavg.txt
+/fire2.mp4
 effecttest_trace.csv
 
 # ---- 一時 ----
