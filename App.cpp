@@ -892,9 +892,10 @@ static int RunSelfTest(const char* path)
                 const float* s = mi.sub.At(SUB_SCALE);
                 const float* c = mi.sub.At(SUB_COLOR);
                 fprintf(fp,
-                        " | %s t=%.3f/%.3f pos=(%.3f,%.3f,%.3f) scl=(%.3f,%.3f,%.3f) col=(%.2f,%.2f,%.2f,%.2f)",
+                        " | %s t=%.3f/%.3f pos=(%.3f,%.3f,%.3f) scl=(%.3f,%.3f,%.3f) col=(%.2f,%.2f,%.2f,%.2f) tex=%d",
                         mi.gen->chunk.name, mi.sub.Elapsed(), mi.gen->Length(),
-                        p[0], p[1], p[2], s[0], s[1], s[2], c[0], c[1], c[2], c[3]);
+                        p[0], p[1], p[2], s[0], s[1], s[2], c[0], c[1], c[2], c[3],
+                        mi.texIndex);
             }
             fprintf(fp, "\n");
         }
