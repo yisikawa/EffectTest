@@ -50,6 +50,7 @@ namespace
     float g_SizeScale = 1.0f;     // ビルボードの基準半径
 bool  g_UvScroll  = false;    // UV オフセット（sub+0xB4/0xB8）。0=off / 1=0..1 巡回 / 2=セル内巡回
 bool  g_BlendAuto = false;    // --blend auto: テクスチャの黒割合で alpha / add を自動選択
+bool  g_GeoFlat  = false;     // 0x1F の XZ 平面を地面デカールとして描く（--geoflat on）
 int   g_SizeMode  = 3;        // 0: scale / 1: 0x21 quad / 2: 正方形（scale[2]）/ 3: メートル（既定）
 
 // 骨格をエフェクトのルート変換として使う（--model / --motion / --bone）
@@ -463,6 +464,14 @@ static void RenderScene(bool present)
             const float sx  = (s[0] > 0.001f) ? s[0] : 1.0f;
             const float sy2 = (s[1] > 0.001f) ? s[1] : 1.0f;
 
+            // 0x1F が地面平面（Y=0 の XZ クワッド）なら、カメラ正対ではなく世界軸で描く
+            //   ※ 既定は無効（--geoflat on で有効）。11\22 では地面デカールが大きく出る
+            const bool  flat = g_GeoFlat && mi.gen->hasGeo && mi.gen->geoFlat;
+            float       wR[3] = { 1.0f, 0.0f, 0.0f };
+            float       wU[3] = { 0.0f, 0.0f, 1.0f };
+            const float* axR = flat ? wR : right;
+            const float* axU = flat ? wU : up;
+
             // 0x21 クワッドのローカル範囲（±2 など）を寸法に使う場合（--size quad）
             float halfW = g_SizeScale * sx;
             float halfH = g_SizeScale * sy2;
@@ -475,9 +484,9 @@ static void RenderScene(bool present)
                 halfH = g_SizeScale * su.quadHalf[1];
 
                 // クワッド中心のオフセット（ローカル xy）
-                center[0] += right[0] * su.quadCenter[0] + up[0] * su.quadCenter[1];
-                center[1] += right[1] * su.quadCenter[0] + up[1] * su.quadCenter[1];
-                center[2] += right[2] * su.quadCenter[0] + up[2] * su.quadCenter[1];
+                center[0] += axR[0] * su.quadCenter[0] + axU[0] * su.quadCenter[1];
+                center[1] += axR[1] * su.quadCenter[0] + axU[1] * su.quadCenter[1];
+                center[2] += axR[2] * su.quadCenter[0] + axU[2] * su.quadCenter[1];
             }
             else if (g_SizeMode == 2)
             {
@@ -493,9 +502,9 @@ static void RenderScene(bool present)
                 {
                     halfW = g_SizeScale * su.quadHalf[0];
                     halfH = g_SizeScale * su.quadHalf[1];
-                    center[0] += right[0] * su.quadCenter[0] + up[0] * su.quadCenter[1];
-                    center[1] += right[1] * su.quadCenter[0] + up[1] * su.quadCenter[1];
-                    center[2] += right[2] * su.quadCenter[0] + up[2] * su.quadCenter[1];
+                    center[0] += axR[0] * su.quadCenter[0] + axU[0] * su.quadCenter[1];
+                    center[1] += axR[1] * su.quadCenter[0] + axU[1] * su.quadCenter[1];
+                    center[2] += axR[2] * su.quadCenter[0] + axU[2] * su.quadCenter[1];
                 }
                 else
                 {
@@ -504,8 +513,8 @@ static void RenderScene(bool present)
                 }
             }
 
-            float axisR[3] = { right[0] * halfW, right[1] * halfW, right[2] * halfW };
-            float axisU[3] = { up[0] * halfH,    up[1] * halfH,    up[2] * halfH };
+            float axisR[3] = { axR[0] * halfW, axR[1] * halfW, axR[2] * halfW };
+            float axisU[3] = { axU[0] * halfH,    axU[1] * halfH,    axU[2] * halfH };
 
             if (Mptr != nullptr)
             {
@@ -1504,6 +1513,26 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
                 if      (_stricmp(mode, "0x21") == 0) g_Effect.SetUseTexFrames(true);
                 else if (_stricmp(mode, "full") == 0) g_Effect.SetUseTexFrames(false);
                 else { Log("[shot] unknown uv: %s", mode); return 2; }
+                continue;
+            }
+
+            if (_stricmp(tok, "--geo") == 0)
+            {
+                char mode[MAX_PATH] = {};
+                if (!NextToken(p, mode, MAX_PATH)) return 2;
+                if      (_stricmp(mode, "on")  == 0) g_Effect.SetGeo(true);
+                else if (_stricmp(mode, "off") == 0) g_Effect.SetGeo(false);
+                else { Log("[shot] unknown geo: %s", mode); return 2; }
+                continue;
+            }
+
+            if (_stricmp(tok, "--geoflat") == 0)
+            {
+                char mode[MAX_PATH] = {};
+                if (!NextToken(p, mode, MAX_PATH)) return 2;
+                if      (_stricmp(mode, "on")  == 0) g_GeoFlat = true;
+                else if (_stricmp(mode, "off") == 0) g_GeoFlat = false;
+                else { Log("[shot] unknown geoflat: %s", mode); return 2; }
                 continue;
             }
 

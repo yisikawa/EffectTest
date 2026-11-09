@@ -105,39 +105,72 @@ static bool ParseGeometry(const DatFile& dat, const char* name4, GeneratorBlock&
     memcpy(&shapes, p + 0x16, 2);
     if (shapes == 0 || shapes > 4096) return false;
 
-    const uint32_t start = 0x36;
+    const uint32_t start = 0x30;     // 実測: `f101` で 0x30 + count*3*0x24 = 0xDB0（末尾一致）
     const uint32_t stride = 0x24;
-    // 実測: `fire`(shapes=2, size=0x110) と `f101`(shapes=32, size=0xDB0) は
-    //       「頂点数 = shapes」で 0x36 + shapes*0x24 が収まる（*6 ではない）
-    const uint32_t need = start + (uint32_t)shapes * stride;
+    const uint32_t verts = (uint32_t)shapes * 3u;   // 三角形数 × 3
+    const uint32_t need = start + verts * stride;
     if (need > c->size) return false;
 
-    float x0 = 1e9f, y0 = 1e9f, x1 = -1e9f, y1 = -1e9f;
+    // 位置は half-float（実測 0x3F00=1.75 / 0xBF00=-1.75）
+    auto half2f = [](uint16_t h) -> float
+    {
+        const int s = (h >> 15) & 1;
+        const int e = (h >> 10) & 0x1F;
+        const int m = h & 0x3FF;
+        float v;
+        if (e == 0)      v = (float)m * 5.9604644775390625e-8f;      // 2^-24
+        else if (e == 31) v = (m == 0) ? 1e30f : 0.0f;
+        else             v = (1.0f + (float)m / 1024.0f) * powf(2.0f, (float)(e - 15));
+        return s ? -v : v;
+    };
+
+    float x0 = 1e9f, y0 = 1e9f, z0 = 1e9f, x1 = -1e9f, y1 = -1e9f, z1 = -1e9f;
     float u0 = 1e9f, v0 = 1e9f, u1 = -1e9f, v1 = -1e9f;
 
-    for (uint32_t i = 0; i < (uint32_t)shapes; ++i)
+    for (uint32_t i = 0; i < verts; ++i)
     {
         const uint8_t* q = p + start + i * stride;
-        float x = 0.0f, y = 0.0f, u = 0.0f, v = 0.0f;
-        memcpy(&x, q + 0x00, 4);
-        memcpy(&y, q + 0x04, 4);
-        memcpy(&u, q + 0x14, 4);
-        memcpy(&v, q + 0x18, 4);
+        uint16_t hx = 0, hy = 0, hz = 0;
+        memcpy(&hx, q + 0x00, 2);
+        memcpy(&hy, q + 0x02, 2);
+        memcpy(&hz, q + 0x04, 2);
+        const float x = half2f(hx), y = half2f(hy), z = half2f(hz);
+
+        float u = 0.0f, v = 0.0f;
+        memcpy(&u, q + 0x1A, 4);
+        memcpy(&v, q + 0x1E, 4);
+
         if (x < x0) x0 = x;
         if (y < y0) y0 = y;
+        if (z < z0) z0 = z;
         if (x > x1) x1 = x;
         if (y > y1) y1 = y;
+        if (z > z1) z1 = z;
         if (u < u0) u0 = u;
         if (v < v0) v0 = v;
         if (u > u1) u1 = u;
         if (v > v1) v1 = v;
     }
 
-    g.hasGeo      = true;
-    g.geoHalf[0]   = (x1 - x0) * 0.5f;
-    g.geoHalf[1]   = (y1 - y0) * 0.5f;
-    g.geoCenter[0] = (x1 + x0) * 0.5f;
-    g.geoCenter[1] = (y1 + y0) * 0.5f;
+    const float ex = x1 - x0, ey = y1 - y0, ez = z1 - z0;
+    g.hasGeo = true;
+
+    // Y がほぼ 0 で XZ に広がる場合は地面平面（デカール）として扱う
+    g.geoFlat = (ey < 0.01f && (ex > 0.05f || ez > 0.05f));
+    if (g.geoFlat)
+    {
+        g.geoHalf[0]   = ex * 0.5f;             // 幅（X）
+        g.geoHalf[1]   = ez * 0.5f;             // 奥行（Z）
+        g.geoCenter[0] = (x1 + x0) * 0.5f;
+        g.geoCenter[1] = (z1 + z0) * 0.5f;
+    }
+    else
+    {
+        g.geoHalf[0]   = ex * 0.5f;
+        g.geoHalf[1]   = ey * 0.5f;
+        g.geoCenter[0] = (x1 + x0) * 0.5f;
+        g.geoCenter[1] = (y1 + y0) * 0.5f;
+    }
     // UV が退化している場合は全面（0,0,1,1）にフォールバック
     if (u1 - u0 > 1e-4f && v1 - v0 > 1e-4f)
     {
@@ -184,7 +217,7 @@ static bool ParseGeometry(const DatFile& dat, const char* name4, GeneratorBlock&
     return true;
 }
 
-void MotionInstance::Reset(const DatFile* d, const GeneratorBlock* g, float start, int tex, int op)
+void MotionInstance::Reset(const DatFile* d, const GeneratorBlock* g, float start, int tex, int op, bool applyGeo)
 {
     dat       = d;
     gen       = g;
@@ -210,8 +243,8 @@ void MotionInstance::Reset(const DatFile* d, const GeneratorBlock* g, float star
         float* prev = su.sub.At(SUB_PREV);
         prev[0] = prev[1] = prev[2] = 0.0f;
 
-        // 0x1F（ジオメトリ）: bbox を寸法・UV として使う（0x21 が無い場合の形状）
-        if (g != nullptr && g->hasGeo)
+        // 0x1F（ジオメトリ）: bbox を寸法・UV として使う（--geo on のときのみ）
+        if (applyGeo && g != nullptr && g->hasGeo)
         {
             su.quadHalf[0]   = g->geoHalf[0];
             su.quadHalf[1]   = g->geoHalf[1];
@@ -611,7 +644,7 @@ void EffectContext::Spawn(const char* name4, float startSec, int op)
     if (g->texName[0] != '\0') tex = FindTextureIndexBySpecific(g->texName);
     if (tex < 0) tex = FindTextureIndex(g->linkName);
     if (tex < 0 && g->geoName[0] != '\0') tex = FindTextureIndexBySpecific(g->geoName);
-    mi.Reset(m_Dat, g, startSec, tex, op);
+    mi.Reset(m_Dat, g, startSec, tex, op, m_Geo);
 
     // 描画に使う SRV（借用）: ローカル 0x20 → base の 0x20 の順で解決
     if (tex >= 0 && tex < (int)m_Textures.size())

@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 //======================================================================
 //  Effect.h : エフェクト DAT モデル（タイムライン / ジェネレータ / サブオブジェクト）
 //
@@ -115,12 +115,13 @@ struct GeneratorBlock
     char     texName[9]  = {};  // 同名 0x21 の +0x20（specific 名 8 文字）。テクスチャ解決に使う
     std::vector<TexFrame> texFrames;   // 同名の 0x21 があればそのフレーム列（無ければ空）
 
-    // 0x1F（ジオメトリ）: 36 B 頂点 × 形状数。寸法と UV を bbox で持つ
+    // 0x1F（ジオメトリ）: 頂点は half-float(16bit) 位置。寸法と UV を bbox で持つ
     bool     hasGeo     = false;
+    bool     geoFlat    = false;  // XZ 平面（地面デカール）か
     float    geoHalf[2]   = { 0.0f, 0.0f };
     float    geoCenter[2] = { 0.0f, 0.0f };
     float    geoUV[4]     = { 0.0f, 0.0f, 1.0f, 1.0f };
-    char     geoName[9]   = {};   // 0x1F が参照するテクスチャ名（8 文字）
+    char     geoName[9]   = {};   // 0x1F が参照するテクスチャ名（4 文字）
 
     inline bool HasFrames() const { return !texFrames.empty(); }
 
@@ -158,7 +159,7 @@ struct MotionInstance
     int SubCount() const { return (int)subs.size(); }
     SubObject& Sub0() { return subs[0].sub; }
 
-    void Reset(const DatFile* d, const GeneratorBlock* g, float start, int tex, int op);
+    void Reset(const DatFile* d, const GeneratorBlock* g, float start, int tex, int op, bool applyGeo = false);
     void Eval(const class EffectContext& ctx, float dt);
 };
 
@@ -204,9 +205,12 @@ public:
     bool UvCrop() const { return m_UvCrop; }
 
     // モデル従属モード（AltanaView の ctx+0x1a0 != 0 相当）
-    //   true にすると VM#1 の op を実行しない（位置は骨行列で決まる）
     void SetAttached(bool on) { m_Attached = on; }
     bool Attached() const { return m_Attached; }
+
+    // 0x1F（ジオメトリ）の bbox/UV をインスタンスに適用する（--geo on。既定 off）
+    void SetGeo(bool on) { m_Geo = on; }
+    bool Geo() const { return m_Geo; }
 
     // ビルボード寸法に 0x21 クワッドの範囲を使う（--size quad）
     void SetQuadSize(bool on) { m_QuadSize = on; }
@@ -273,6 +277,7 @@ private:
     bool     m_LoopRespawn  = false;    // サブ再初期化（main のストリーム D に op 0x05）
     bool     m_UvCrop       = false;    // 0x21 無しの UV をテクスチャの不透明領域に（--uvcrop on）
     bool     m_Attached     = false;    // モデル従属（ctx+0x1a0 != 0 相当。VM#1 を実行しない）
+    bool     m_Geo          = false;    // 0x1F の bbox/UV を適用（--geo on）
     bool     m_QuadSize     = false;    // 0x21 クワッド寸法で描く（--size quad）
 
     TimTexture m_WhiteTex;

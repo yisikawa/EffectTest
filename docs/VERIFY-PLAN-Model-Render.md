@@ -191,8 +191,8 @@ Select-String -Path effecttest_log.txt -Pattern 'subs='
 期待（実測値・2026-11-09）:
 - `11\17` = **4,481 / 327**、`11\18` = **4,048 / 576**（**完全一致**＝サブ数 1 の経路は従来と同一）
 - `12\43` のログに `subs=4`（`g011`/`g010`）が出る。`g006` は `subs=12`
-- `12\43` の非背景は **3,503**（この DAT はサブの位置が同一なので画素数は不変）
-- `11\22` はサブ数 >1 の generator（`ppk0`=2, `ft00`=3, `g012`=2）を持つため **7,179 → 6,408** に増加（意図どおり）
+- `12\43` の非背景は **3,504**（この DAT はサブの位置が同一なので画素数は不変）
+- `11\22` はサブ数 >1 の generator（`ppk0`=2, `ft00`=3, `g012`=2）を持つため **7,179 → 6,521** に増加（意図どおり）
 
 ### V-M15 サブの寿命・再初期化（AltanaView 準拠）
 
@@ -203,7 +203,7 @@ $ROM='C:\Program Files (x86)\PlayOnline\SquareEnix\FINAL FANTASY XI\ROM'
 ```
 期待（実測値・2026-11-09）:
 - `11\17` = **4,481 / 327**、`11\18` = **4,048 / 576**（折返し→頭打ちに変えたが不変）
-- `11\22` = 6,408 / 214、`12\43` = 3,503 / 257
+- `11\22` = 6,521 / 247、`12\43` = 3,504 / 257
 - ループフラグ（main のストリーム D `+0x8C` の op 0x05）は 4 つの DAT で**すべて false**
   → `--trace` で確認しても経過時間は単調増加（再初期化は起きない）
 
@@ -224,19 +224,27 @@ $ROM='C:\Program Files (x86)\PlayOnline\SquareEnix\FINAL FANTASY XI\ROM'
 - **`--bone-map auto`**（体軸 Y で 0.05〜1.75 m の骨を等分に割当）= **8,513 / 748**、
   `cand=65` / `bones=94`。180 フレーム・`--bg 40F0F0` で「体の各所に炎」に最も近い
 
-### V-M17 `0x1F`（ジオメトリ）の bbox 適用
+### V-M17 `0x1F`（ジオメトリ）— 既定は無効（`--geo`）
 
 ```powershell
 $ROM='C:\Program Files (x86)\PlayOnline\SquareEnix\FINAL FANTASY XI\ROM'
-.\x64\Release\EffectTest.exe --shot --frames 90 "$ROM\11\17.DAT" geo_fire.png
-.\x64\Release\EffectTest.exe --shot --frames 90 "$ROM\11\22.DAT" geo_bliz.png
-Select-String -Path effecttest_log.txt -Pattern 'geo=1'
+.\x64\Release\EffectTest.exe --shot --frames 90 "$ROM\11\22.DAT" geo_off.png             # 既定（geo off）
+.\x64\Release\EffectTest.exe --shot --frames 90 --geo on "$ROM\11\22.DAT" geo_on.png
+.\x64\Release\EffectTest.exe --shot --frames 90 --geo on --geoflat on "$ROM\11\22.DAT" geo_flat.png
 ```
 期待（実測値・2026-11-09）:
-- ログに `geo=1` が出る（例: `g003 link=fa04 … geo=1`）
-- `11\22` = **6,408 / 214**（0x1F bbox 適用前は 6,521 / 247）
-- `12\43` = **3,503 / 257**、`11\17` = 4,481 / 327、`11\18` = 4,048 / 576（不変）
-- `0x1F` の**テクスチャ名が未解決**のため、該当インスタンスは `srv=null` で描画されない（次の課題）
+
+| 条件 | `11\17` | `11\22` | `12\43` |
+|---|---|---|---|
+| 既定（`--geo off`） | **4,481 / 327** | **6,521 / 247** | **3,504 / 257** |
+| `--geo on` | 4,606 / 327 | **32,538 / 264** | 6,554 / 256 |
+| `--geo on --geoflat on` | 4,507 / 327 | **29,509 / 265** | 2,435 / 223 |
+
+- `--geo on` で `0x1F` の bbox/UV をインスタンスへ適用（`geo=1` がログに出る）
+- `--geoflat on` は XZ 平面（Y=0）を**地面デカール**として世界軸で描く
+- **既定は両方 off**（0x1F の寸法解釈がまだ検証途上のため。ゴールデンは off の値）
+
+## 3. 失敗時の切り分け
 
 ## 3. 失敗時の切り分け
 
@@ -248,7 +256,7 @@ Select-String -Path effecttest_log.txt -Pattern 'geo=1'
 （`docs/ANALYSIS-AltanaView-Draw.md` §5.6）。
 
 - 変更前（`scale`）: `11\17` 8,050 / 348、`11\18` 2,694 / 576、`11\22` 7,317 / 238、`12\43` 10,729 / 244
-- **変更後（`meter`）**: `11\17` **4,481 / 327**、`11\18` **4,048 / 576**、`11\22` **6,408 / 214**、`12\43` **3,503 / 257**
+- **変更後（`meter`）**: `11\17` **4,481 / 327**、`11\18` **4,048 / 576**、`11\22` **6,521 / 247**、`12\43` **3,504 / 257**
 - 帯（横長の黒塊）は解消。`--size scale` で従来値に戻せる
 
 
