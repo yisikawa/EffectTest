@@ -197,6 +197,7 @@ Expected: `groups=29`、NPC ROM1 = `items=1266`
 | V-06 | ✅ | NPC `131/6` = 39 件、`12/43` = `main,hit1` |
 | V-07 | ✅ | `prog=0x50`、`timeline = 13 insts, duration=8.3333s`、exit 0（timeline でない `0x07`（`sum0` 等）を含む DAT でもクラッシュしない） |
 | V-08 | ✅ | `ok=1`。非背景 **8,199**（Fire）/ **2,738**（Fire II）。最大 RGB 和 765 / 719 |
+| V-11（Phase 2） | ✅ | `--shot` で `[base] … tex=61 load_ms=4`、`g006 link=hit6 srv≠0` / `g005 link=hi17 srv≠0`（base の `0x20` を借用）。`gs00`(0x3D)・`g003`(0x1F) は `srv=0`（白）で正常 |
 | V-09 | 未実施 | GUI のクリック操作（手動） |
 | V-10 | ✅ | `groups=29` / `NPC ROM1 items=1266` |
 
