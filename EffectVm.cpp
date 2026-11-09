@@ -105,6 +105,26 @@ static void Vm1(const MotionInstance& mi, SubUnit& su, const EffectContext& ctx)
             break;
         }
 
+        //--- 球面ランダムオフセット（実測 FUN_0040e650 op 0x06 / 0x40E9B0-0x40EA00）
+        //   mag   = arg1 + arg0 * (rand / 65536)
+        //   phi   = rand * (2π/65536)      ← 0x452C70 = 1.462918119976564e-09
+        //   theta = rand * (π/65536) − π/2 ← 0x452C68 = 7.3145905998828198e-10, 0x452C60 = π/2
+        //   pos += (cosθ·cosφ, sinθ, cosθ·sinφ) * mag
+        //   ※ 生成時（VM#1）に 1 回だけ走るので、粒子ごとの初期位置のばらつきになる
+        case 0x06:
+        {
+            static const float kPi = 3.14159265358979f;
+            const float mag   = arg[1] + arg[0] * Rand01();
+            const float phi   = Rand01() * 2.0f * kPi;
+            const float theta = Rand01() * kPi - 0.5f * kPi;
+            const float ct = cosf(theta), st = sinf(theta);
+            float* t = su.sub.Pos();
+            t[0] += ct * cosf(phi) * mag;
+            t[1] += st * mag;
+            t[2] += ct * sinf(phi) * mag;
+            break;
+        }
+
         //--- 乱数レンジ加算 --------------------------------------------
         // AltanaView FUN_0040e650 の確定仕様:
         //   0x0A : Move  += rand(-arg, +arg)   （対称・成分ごとに独立）
