@@ -140,6 +140,28 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\ShotStats.ps1 -Path 
 - 非背景 **2,591**（なしは 2,694、`0:10,1:20,2:30,3:40` は 2,050）
 - 骨は **0 始まりの配列番号**（`Skeleton::World(index)`）
 
+### V-M12 寸法（メートル基準）と煙の面積
+
+```powershell
+$ROM='C:\Program Files (x86)\PlayOnline\SquareEnix\FINAL FANTASY XI\ROM'
+foreach ($m in @('scale','square','quad','meter')) {
+  .\x64\Release\EffectTest.exe --shot --size $m --uv 0x21 --frames 180 --bg 40F0F0 "$ROM\11\18.DAT" "m_$m.png"
+  .\tools\ShotStats.ps1 -Path "m_$m.png" | Select-Object -Last 1
+}
+```
+期待（実測値・2026-11-09）:
+
+| `--size` | 非背景 | 暗部（lum<60） |
+|---|---|---|
+| `scale`（既定） | 9,326 | 405 |
+| `square` | 4,454 | — |
+| `quad` | **11,158** | **10,204** |
+| `meter` | 5,470 | 4,388 |
+
+- 参照フレーム（`fire2.mp4` 6.2 s = effect 3.0 s）の暗部は **11,301** → **`quad` が一致**
+- **単位はメートル**（1.0 = 1 m、骨も同基準）。`0x21` のクワッドは `fire11`=2×4 m、`fire14`≈3.94 m 角
+- generator ヘッダ `+0x40`/`+0x50` は**色**（全 generator で (1,1,1,0)/(1,1,1,1)）。寸法フィールドは無い
+
 ## 3. 失敗時の切り分け
 
 | 症状 | 疑う箇所 | 確認 |
