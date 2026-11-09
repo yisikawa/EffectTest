@@ -194,6 +194,19 @@ Select-String -Path effecttest_log.txt -Pattern 'subs='
 - `12\43` の非背景は **10,729**（この DAT はサブの位置が同一なので画素数は不変）
 - `11\22` はサブ数 >1 の generator（`ppk0`=2, `ft00`=3, `g012`=2）を持つため **7,179 → 7,317** に増加（意図どおり）
 
+### V-M15 サブの寿命・再初期化（AltanaView 準拠）
+
+```powershell
+$ROM='C:\Program Files (x86)\PlayOnline\SquareEnix\FINAL FANTASY XI\ROM'
+.\x64\Release\EffectTest.exe --shot --frames 90 "$ROM\11\17.DAT" lt_fire.png
+.\x64\Release\EffectTest.exe --shot --frames 90 "$ROM\11\18.DAT" lt_fire2.png
+```
+期待（実測値・2026-11-09）:
+- `11\17` = **8,050 / 348**、`11\18` = **2,694 / 576**（折返し→頭打ちに変えたが不変）
+- `11\22` = 7,317 / 238、`12\43` = 10,729 / 244
+- ループフラグ（main のストリーム D `+0x8C` の op 0x05）は 4 つの DAT で**すべて false**
+  → `--trace` で確認しても経過時間は単調増加（再初期化は起きない）
+
 ## 3. 失敗時の切り分け
 
 | 症状 | 疑う箇所 | 確認 |

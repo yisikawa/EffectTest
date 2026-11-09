@@ -188,6 +188,9 @@ public:
     void SetRandomFrame(bool on) { m_RandomFrame = on; }
     bool RandomFrame() const { return m_RandomFrame; }
 
+    // サブ再初期化（リスポーン）フラグ: main のストリーム D に op 0x05 があると立つ
+    bool LoopRespawn() const { return m_LoopRespawn; }
+
     // ビルボード寸法に 0x21 クワッドの範囲を使う（--size quad）
     void SetQuadSize(bool on) { m_QuadSize = on; }
     bool QuadSize() const { return m_QuadSize; }
@@ -250,6 +253,7 @@ private:
     uint8_t  m_LastColor[4] = { 255, 255, 255, 255 };
     bool     m_UseTexFrames = true;     // 0x21 の UV 適用（--uv full で無効化）
     bool     m_RandomFrame  = false;    // 0x21 のフレームを乱数選択（AltanaView 準拠は true。--uvframe random）
+    bool     m_LoopRespawn  = false;    // サブ再初期化（main のストリーム D に op 0x05）
     bool     m_QuadSize     = false;    // 0x21 クワッド寸法で描く（--size quad）
 
     TimTexture m_WhiteTex;

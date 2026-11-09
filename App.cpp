@@ -519,7 +519,7 @@ static void RenderScene(bool present)
             //     破綻したため未適用。AltanaView は FUN_00401f70 で (v * inst) >> 7 を
             //     行うが、頂点レコード内の色位置は再検証が必要（docs/ANALYSIS-AltanaView-Draw.md §5.2）。
 
-            // UV はそのまま（0xB4/0xB8 の加算は当方の解釈では値が不定で破綻したため未適用）
+            // UV はそのまま（0xB4/0xB8 のオフセット適用はアトラス内ラップが未実装のため保留）
             GfxDrawQuad(center, axisR, axisU, rgba, su.uv, srv);
 
             if (g_TraceFile != nullptr)

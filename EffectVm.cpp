@@ -16,6 +16,8 @@
 namespace
 {
     inline float Rand01() { return (float)rand() / (float)RAND_MAX; }
+    // 0..255 の乱数（AltanaView FUN_0044c55c。色バイトやジッタ量に使われる）
+    inline int RandByte() { return (int)(Rand01() * 256.0f) & 0xFF; }
     inline uint32_t InstLen(const uint8_t* p) { return (uint32_t)(p[1] & 0x1F); }
 }
 
@@ -173,15 +175,16 @@ static bool Vm2(const MotionInstance& mi, SubUnit& su, float dt, float rootDurat
     if (dur <= 0.0f) dur = (mi.gen->Length() > 0.0f) ? mi.gen->Length() : (1.0f / 60.0f);
 
     //--------------------------------------------------------------
-    // 経過時間の更新（AltanaView と同じくループ折返し）
+    // 経過時間の更新
+    //   AltanaView FUN_0040f4b0: 総継続時間に達したら t01=1・elapsed は dur で頭打ち
+    //   （折返しはしない。寿命後の扱いは呼び出し側 = 再初期化 or 削除）
     //--------------------------------------------------------------
     float t = su.sub.Elapsed() + dt;
-    bool wrapped = false;
-    if (t >= dur)
+    bool ended = false;
+    if (dur > 0.0f && t >= dur)
     {
-        t -= dur * floorf(t / dur);
-        if (t < 0.0f) t = 0.0f;
-        wrapped = true;
+        t = dur;
+        ended = true;
     }
     su.sub.Elapsed() = t;
     su.sub.T01()     = (dur > 0.0f) ? (t / dur) : 0.0f;
@@ -249,9 +252,10 @@ static bool Vm2(const MotionInstance& mi, SubUnit& su, float dt, float rootDurat
             }
             break;
 
-        // 注: VM#2 の 0x0F〜0x21 は AltanaView では「角度補間」であり、
-        //     0xB4/0xB8（u/v オフセット）への積分ではない（実測で UV が破綻した）。
-        //     UV オフセットは描画側で加算するだけに留める。
+        // 注: VM#2 の 0x0F〜0x21 は AltanaView では「角度補間」。
+        //     UV オフセット（0x27/0x28 → スロット 0x2D/0x2E = 0xB4/0xB8）も
+        //     素朴に累積すると UV がアトラス範囲を外れて帯状に破綻するため未適用。
+        //     （アトラス内でラップさせる処理とセットで実装する必要がある）
 
         default:
             break;
@@ -265,7 +269,7 @@ static bool Vm2(const MotionInstance& mi, SubUnit& su, float dt, float rootDurat
     //--------------------------------------------------------------
     // 寿命: ジェネレータの長さを 1 周したか（呼び出し側がインスタンスを終了）
     //--------------------------------------------------------------
-    return wrapped;
+    return ended;
 }
 
 //======================================================================
@@ -275,13 +279,13 @@ void MotionInstance::Eval(const EffectContext& ctx, float dt)
 {
     if (gen == nullptr || dat == nullptr) return;
 
-    bool wrapped = false;
+    bool ended = false;
 
     // AltanaView と同じく、**サブ（粒子）ごと**に VM#1 → VM#2 を回す
     for (SubUnit& su : subs)
     {
         Vm1(*this, su, ctx);
-        if (Vm2(*this, su, dt, ctx.Duration())) wrapped = true;
+        if (Vm2(*this, su, dt, ctx.Duration())) ended = true;
 
         //----------------------------------------------------------
         // 0x21 のフレーム（テクスチャアトラス）
@@ -313,7 +317,34 @@ void MotionInstance::Eval(const EffectContext& ctx, float dt)
         }
     }
 
-    // 寿命: ジェネレータの長さを 1 周したら終了（サブのいずれかが周回した時点）
-    if (wrapped) expired = true;
+    // 寿命: 総継続時間に達したら、ループフラグがあればサブを再初期化し、
+    //       無ければインスタンスを終了する（AltanaView FUN_0040e0b0 / FUN_00410090）
+    if (ended)
+    {
+        if (ctx.LoopRespawn())
+        {
+            for (SubUnit& su : subs)
+            {
+                su.sub.Elapsed() = 0.0f;
+                su.sub.T01()     = 0.0f;
+
+                // Move（0x8C..）を 0..255 の乱数 * 1/60 [m] だけずらす
+                float* mv = su.sub.Move();
+                mv[0] -= (float)(RandByte()) * (1.0f / 60.0f);
+                mv[1] -= (float)(RandByte()) * (1.0f / 60.0f);
+                mv[2] -= (float)(RandByte()) * (1.0f / 60.0f);
+
+                // UV オフセット（0xB4/0xB8）も同様に
+                float* uvo = su.sub.At(0xB4);
+                uvo[0] -= (float)(RandByte());
+                uvo[1] -= (float)(RandByte());
+            }
+            expired = false;
+        }
+        else
+        {
+            expired = true;
+        }
+    }
 }
 

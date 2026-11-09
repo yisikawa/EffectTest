@@ -1,4 +1,4 @@
-#include "Effect.h"
+﻿#include "Effect.h"
 #include "EffectBase.h"
 #include <cmath>
 
@@ -246,6 +246,30 @@ bool EffectContext::BuildInternal(const DatFile& dat, const char* mainChunkName)
 
             if (in.op == 0x00) break;                        // 明示終端
             pos += (uint32_t)in.len * 4;
+        }
+
+        //----------------------------------------------------------
+        // ループ（サブ再初期化）フラグ
+        //   AltanaView FUN_0040d790: main のストリーム D(+0x8C) に op 0x05 が
+        //   現れると root+0x5e が立ち、寿命でサブを削除せず再初期化する
+        //----------------------------------------------------------
+        m_LoopRespawn = false;
+        if (mainChunk->size > 0x8C && dat.InRange(mainChunk->offset, mainChunk->size))
+        {
+            uint32_t relD = 0;
+            memcpy(&relD, dat.At(mainChunk->offset + 0x8C), 4);
+            uint32_t pD = mainChunk->offset + relD;
+            for (int k = 0; k < 64; ++k)
+            {
+                if (pD + 4 > end) break;
+                const uint8_t* q = dat.At(pD);
+                if (q == nullptr) break;
+                const uint8_t op = q[0];
+                const uint8_t len = q[1] & 0x1F;
+                if (op == 0x00 || len == 0) break;
+                if (op == 0x05) { m_LoopRespawn = true; break; }
+                pD += (uint32_t)len * 4;
+            }
         }
     }
 
