@@ -60,6 +60,10 @@ effecttest_shot_diag.txt
 /regress.png
 /rg*.png
 /det2_*.png
+/bb_*.png
+/bone_after.png
+/reg_after.png
+/sheet2.png
 /fire_cyan.png
 /Song12-43.gif
 /yavg_noalpha.txt
