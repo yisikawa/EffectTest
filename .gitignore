@@ -38,6 +38,10 @@ effecttest_shot_diag.txt
 /quad_*.png
 /det_*.png
 /rgb60.png
+/n_*.png
+/fix*.png
+/cyan_*.png
+/na_full_*.png
 /yavg.txt
 /fire2.mp4
 effecttest_trace.csv

@@ -324,7 +324,7 @@ next < 16 で終端 / pos += next
 | テクスチャ 0 枚 | `fourCC` のバイト順が逆（`'DXT3'` は `0x44585433`） | MSVC 複数文字リテラルで比較 |
 | 軸は出るがエフェクトが出ない | 行列を**転置せず** cbuffer へ（HLSL は列優先） | `XMMatrixMultiplyTranspose` |
 | エフェクトが真っ黒 | FFXI のエフェクトテクスチャは **RGB=0 で alpha に形状**を持つ | `max(rgb, alpha)` を輝度として扱う |
-| **Fire が青い**（本来は橙） | FFXI の TIM は **BGRA 格納**。そのまま SRV 化すると R/B が入れ替わる | ピクセルシェーダで `t.rgb = t.bgr`（既定 `--color bgr`） |
+| **`--shot` の色が入れ替わる**（背景 R/B が逆） | バックバッファは BGRA だが PNG エンコーダは RGBA を要求 | 保存時に R/B を入れ替える（`GfxSaveBackBufferPNG`）。`--bg 40F0F0` で 1 点検査 |
 | PNG 保存が `REGDB_E_CLASSNOTREG` | `CoCreateInstance` に interface IID を渡していた | `CLSID_WICImagingFactory` |
 | **List が文字化け**（`繧ｪ繝ｼ繧ｯ` 等） | `.lst` は **UTF-8** なのに ANSI(CP932) の ListBox へ生バイトを渡していた | 読み込み時に **UTF-8 / Shift-JIS を自動判定して UTF-16 化**し、コントロールを **Unicode(W) 版**へ変更 |
 
@@ -334,8 +334,8 @@ next < 16 で終端 / pos += next
 
 | 指標 | 修正前（軸のみ） | 加算 `ONE/ONE`（旧既定） | **既定 `alpha_add` + `0x21`** |
 |---|---|---|---|
-| 背景以外のサンプル数 | 13 | 8,206 | **7,969** |
-| 最大 RGB 合計 | 456 | 765（白飛び） | **686** |
+| 背景以外のサンプル数 | 13 | 8,206 | **8,050** |
+| 最大 RGB 合計 | 456 | 765（白飛び） | **348** |
 
 スクリーンショット: `shot_fire.png`（`--shot` で再生成可能）
 
@@ -343,32 +343,35 @@ next < 16 で終端 / pos += next
 
 AltanaView の `SetRenderState` を静的に走査すると、エフェクト描画は
 **`ALPHABLENDENABLE=1` / `SRCBLEND=SRCALPHA(5)` / `DESTBLEND=ONE(2)` / `ZWRITEENABLE=0`** でした
-（`AltanaView_unpacked.exe` の `0x40b8b0`〜`0x40b8ca`）。`SRCBLEND=ONE` の設定は存在せず、
-旧来の純加算（`ONE/ONE`）は白飛びの原因でした。
+（`AltanaView_unpacked.exe` の `0x40b8b0`〜`0x40b8ca`）。
+ただし **透過なしで描画した参照（`fire2noalpha.mp4`）** ではクワッドが黒板になり、煙が背景を暗くすることから、
+実際のエフェクト合成は **通常のアルファ**（`SRCALPHA`/`INVSRCALPHA`）と判断しました（`docs/DESIGN-List-To-Screen.md` §4.8.6.5）。
 
 | モード | ブレンド式 | 用途 |
 |---|---|---|
-| `alpha_add`（既定） | `dst + src*srcA` | エフェクト（AltanaView 実測） |
+| `alpha_add` | `dst + src*srcA` | 加算寄り（比較用） |
 | `add` | `dst + src` | 旧来の純加算（比較用） |
-| `alpha` | `src*srcA + dst*(1-srcA)` | モデル／通常透過（AltanaView の `+0x407fe9`〜） |
+| `alpha`（既定） | `src*srcA + dst*(1-srcA)` | エフェクト（参照動画と一致。煙が背景を暗くする） |
 
 - GUI: `M` キーで巡回。現在のモードはタイトルとログ `[blend] <mode>` に出ます
-- ヘッドレス: `--shot --blend alpha_add|add|alpha "<dat>" out.png`（`[shot] … blend=<mode>` を出力）
+- ヘッドレス: `--shot --blend alpha|add|alpha_add "<dat>" out.png`（`[shot] … blend=<mode>` を出力）
 - テクスチャフレーム: `--shot --uv 0x21|full "<dat>" out.png`（既定 `uvmode=0x21`。`full` で全面サンプリングに戻る）
 - 時刻指定: `--shot --frames N "<dat>" out.png`（既定 90 = 1.5 s。1 フレーム = 1/60 s）
-- 色順: `--shot --color bgr|rgb "<dat>" out.png`（既定 `bgr` = FFXI の BGRA 格納に合わせて R/B 入替。`rgb` で従来動作）
+- 背景色: `--shot --bg RRGGBB "<dat>" out.png`（参照動画は `40F0F0`）
+- 色順（診断用）: `--shot --color bgr|rgb "<dat>" out.png`（既定 `rgb`。PNG 保存の色順は修正済み）
 - 参照動画との比較: `ffmpeg -ss <3.2 + N/60> -i fire2.mp4 -frames:v 1 -vf "crop=620:900:640:90" cmp.png`（`docs/VERIFY-PLAN-Schedule.md` V-15）
 - 画素統計: `powershell -NoProfile -ExecutionPolicy Bypass -File tools\ShotStats.ps1 -Path out_fire.png`
-  → `sampled=57600 nonBg=7950 maxSum=686`
+  → `sampled=57600 nonBg=8050 maxSum=348`
 
-| DAT | `add` | `alpha_add` | `alpha` |
+| DAT | `add` | `alpha_add` | `alpha`（既定） |
 |---|---|---|---|
-| `11\17`（Fire） | 8,206 / 765 | **7,969 / 686** | 6,487 / 639 |
-| `11\18`（Fire II） | — | **2,779 / 705** | — |
-| `11\22`（Blizzard） | — | **6,596 / 557** | — |
-| `12\43`（Foe Requiem） | 13,150 / 765 | **13,150 / 560** | 13,150 / 469 |
+| `11\17`（Fire） | 3,841 / 668 | 3,132 / 372 | **8,050 / 348** |
+| `11\18`（Fire II） | — | — | **2,694 / 576** |
+| `11\22`（Blizzard） | — | — | **7,179 / 238** |
+| `12\43`（Foe Requiem） | — | — | **10,729 / 244** |
 
-> `--uv full`（`0x21` を使わない）では Fire 7,951 / 686、Fire II 2,481 / 723。
+> `--uv full`（`0x21` を使わない）では Fire 8,033 / 348、Fire II 2,396 / 570。
+> `--bg 40F0F0` で参照動画と同じシアン背景になり、そのまま見比べられる。
 > `11\18` の板に 4×4 の炎タイルが見えるのは、その DAT の該当 generator が `0x21` を持たず、セル指定が VM 命令側にあるため。
 >
 > テクスチャ名は `0x20` の 16 B 名 = **`<グループ 8><specific 8>`** で、`0x21` の `+0x20`（specific）と照合して選ぶ

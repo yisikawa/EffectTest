@@ -2,6 +2,8 @@
 #include <d3dcompiler.h>
 #include <wincodec.h>
 #include <cstdio>
+#include <vector>
+#include <algorithm>
 #pragma comment(lib, "d3d11.lib")
 #pragma comment(lib, "dxgi.lib")
 #pragma comment(lib, "d3dcompiler.lib")
@@ -57,11 +59,9 @@ static const char* kShader =
 "{\n"
 "    float4 t = gTex.Sample(gSmp, i.uv);\n"
 "    if (gOpt.x > 0.5) t.rgb = t.bgr;   // FFXI の TIM は BGRA 格納\n"
-"    // FFXI のエフェクト用テクスチャは RGB=0 で alpha に形状を持つものが多い。\n"
-"    // そのため「RGB と alpha の大きい方」を輝度として扱う。\n"
-"    float3 s = max(t.rgb, float3(t.a, t.a, t.a));\n"
-"    float  m = saturate(max(s.r, max(s.g, s.b)));   // 形状（ブレンド用 alpha）\n"
-"    return float4(s * i.col.rgb * i.col.a * 1.5, m * i.col.a);\n"
+"    // FFXI のエフェクトは「RGB ほぼ 0 ＋ alpha に形状」。透過なしで描くと黒い板になる。\n"
+"    // 参照（fire2noalpha.mp4）と同じ挙動になるよう、RGB と alpha をそのまま返す。\n"
+"    return float4(t.rgb * i.col.rgb * 1.5, t.a * i.col.a);\n"
 "}\n";
 
 //----------------------------------------------------------------------
@@ -76,8 +76,8 @@ namespace
     ID3D11DepthStencilView*  g_DSV     = nullptr;
     ID3D11DepthStencilState* g_DSS     = nullptr;
     ID3D11BlendState*        g_Blends[GFX_BLEND_COUNT] = {};
-    GfxBlendMode             g_BlendMode = GFX_BLEND_ALPHA_ADD;
-    bool                     g_ColorSwap = true;    // 既定 BGR→RGB 入替
+    GfxBlendMode             g_BlendMode = GFX_BLEND_ALPHA;
+    bool                     g_ColorSwap = false;   // 既定 RGB（テクスチャは RGBA として正しく読めている）
     ID3D11RasterizerState*   g_Raster  = nullptr;
     ID3D11SamplerState*      g_Sampler = nullptr;
     ID3D11VertexShader*      g_VS      = nullptr;
@@ -470,7 +470,7 @@ bool GfxSaveBackBufferPNG(const wchar_t* path)
         if (SUCCEEDED(hStep)) { hStep = frame->Initialize(props); ShotDiag("FrameInitialize", hStep); }
         if (SUCCEEDED(hStep)) { hStep = frame->SetSize(desc.Width, desc.Height); ShotDiag("SetSize", hStep); }
 
-        WICPixelFormatGUID fmt = GUID_WICPixelFormat32bppRGBA;
+        WICPixelFormatGUID fmt = GUID_WICPixelFormat32bppBGRA;   // バックバッファは BGRA（DXGI）
         if (SUCCEEDED(hStep)) { hStep = frame->SetPixelFormat(&fmt); ShotDiag("SetPixelFormat", hStep); }
 
         char fmtbuf[64] = {};
@@ -479,8 +479,21 @@ bool GfxSaveBackBufferPNG(const wchar_t* path)
 
         if (SUCCEEDED(hStep))
         {
-            hStep = frame->WritePixels(desc.Height, mapped.RowPitch,
-                                       mapped.RowPitch * desc.Height, (BYTE*)mapped.pData);
+            // バックバッファは BGRA（DXGI）だが PNG エンコーダは RGBA を要求するため、
+            // 書き出し用に R/B を入れ替えたコピーを作る（画素検査の色を正しく保つ）
+            const UINT w = desc.Width;
+            const UINT h = desc.Height;
+            std::vector<BYTE> tmp((size_t)mapped.RowPitch * h);
+            for (UINT y = 0; y < h; ++y)
+            {
+                const BYTE* srow = (const BYTE*)mapped.pData + (size_t)y * mapped.RowPitch;
+                BYTE* drow = tmp.data() + (size_t)y * mapped.RowPitch;
+                memcpy(drow, srow, mapped.RowPitch);
+                for (UINT x = 0; x < w; ++x) std::swap(drow[x * 4 + 0], drow[x * 4 + 2]);
+            }
+
+            hStep = frame->WritePixels(h, mapped.RowPitch,
+                                       mapped.RowPitch * h, tmp.data());
             ShotDiag("WritePixels", hStep);
         }
         if (SUCCEEDED(hStep)) { hStep = frame->Commit();  ShotDiag("FrameCommit", hStep); }

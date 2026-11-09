@@ -46,6 +46,7 @@ namespace
     bool  g_NoTexture = false;    // W: テクスチャを使わず白で描く（デバッグ）
     bool  g_ShowAxes  = false;    // X: 座標軸の表示（既定 OFF。起動時は何も描かない）
     float g_SizeScale = 1.0f;     // ビルボードの基準半径
+float g_ClearColor[4] = { 0.05f, 0.06f, 0.09f, 1.0f };   // --bg で変更（参照動画と合わせる用）
     int   g_TexIndex  = 0;
 
     // カメラ（注視点原点のオービット）
@@ -370,7 +371,7 @@ static void RenderScene(bool present)
 
     UpdateCamera(w, h);
 
-    const float clear[4] = { 0.05f, 0.06f, 0.09f, 1.0f };
+    const float* clear = g_ClearColor;
     GfxBeginFrame(clear);
 
     if (g_ShowAxes) DrawReference();   // 既定は非表示（起動時は何も描かない）
@@ -1199,6 +1200,18 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
                 else if (_stricmp(mode, "add")       == 0) GfxSetBlendMode(GFX_BLEND_ADD);
                 else if (_stricmp(mode, "alpha")     == 0) GfxSetBlendMode(GFX_BLEND_ALPHA);
                 else { Log("[shot] unknown blend: %s", mode); return 2; }
+                continue;
+            }
+
+            if (_stricmp(tok, "--bg") == 0)
+            {
+                char hex[MAX_PATH] = {};
+                if (!NextToken(p, hex, MAX_PATH)) return 2;
+                const unsigned v = (unsigned)strtoul(hex, nullptr, 16);
+                g_ClearColor[0] = ((v >> 16) & 0xFF) / 255.0f;
+                g_ClearColor[1] = ((v >> 8)  & 0xFF) / 255.0f;
+                g_ClearColor[2] = ( v        & 0xFF) / 255.0f;
+                g_ClearColor[3] = 1.0f;
                 continue;
             }
 
