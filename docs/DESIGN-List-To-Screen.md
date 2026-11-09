@@ -316,11 +316,11 @@ ModelTest.exe --base
 
 | # | 決定 | 根拠 |
 |---|---|---|
-| D1 | **モデルの単一選択（クリック / キー移動）で即時**に DAT を読み、Schedule 一覧を更新する。ダブルクリックは同義（後方互換） | AltanaView と同じ操作感。現行はダブルクリックするまで 3 段目が空だった |
+| D1 | **項目（モデル / エフェクト）の単一選択（クリック / キー移動）で即時**に DAT を読み、Schedule 一覧を更新する。ダブルクリックは同義（後方互換） | AltanaView と同じ操作感。現行はダブルクリックするまで 3 段目が空だった |
 | D2 | 3 段目は COMBOBOX ではなく **LISTBOX**（常時見える一覧）＋件数ラベル | 一覧性。`Schedule (39)` のように件数を併記 |
 | D3 | 用語は **Schedule** に統一（= `0x07`。AltanaView の `[NPC] Schedule` と同義）。v1 の「Action」は別名 | `AltanaView.ini` の `Schedule=` / 実測 `ROM\131\6.DAT` の `0x07`=39 件 |
 | D4 | **7 コマ（60 fps で 116.7 ms）静止後に確定**＋確定 index ガード（待ちはコマ基準） | 1,266 件リスト（R4）でのキー連打耐性 |
-| D5 | Schedule は**入れ替え**（蓄積しない＝常に選択中の 1 モデル分） | `0x07` はモデル DAT 内の資源。混在させると解決先が曖昧になる |
+| D5 | Schedule は**入れ替え**（蓄積しない＝常に選択中の 1 項目分） | `0x07` は DAT 内の資源。混在させると解決先が曖昧になる |
 | D6 | Schedule は**行の選択で即再生**（現行の「選択＝再生」挙動を踏襲）。`R` リセット / `Space` 一時停止 | 既存操作との連続性（`App.cpp:469` / `:453`） |
 
 #### 4.7.2 コントロールと レイアウト
@@ -333,7 +333,7 @@ ModelTest.exe --base
 | グループ | `IDC_GROUP` = 1001 | `COMBOBOX`（`CBS_DROPDOWNLIST`） | 29 グループ | 常時 |
 | 項目 | `IDC_ITEMS` = 1002 | `LISTBOX`（`LBS_NOTIFY`） | `名前 (ID)`（最大 1,266 件） | 常時 |
 | Schedule ラベル | `IDC_SCHEDULE_LABEL` = 1004 | `STATIC` | `Schedule (39)` / 未確定は `Schedule (-)` | 常時 |
-| **Schedule** | `IDC_SCHEDULE` = 1003 | `LISTBOX`（`LBS_NOTIFY｜WS_VSCROLL｜LBS_NOINTEGRALHEIGHT`） | 選択モデルの `0x07` 名 | NPC 確定時のみ（Effect 確定・未選択は `EnableWindow(FALSE)`） |
+| **Schedule** | `IDC_SCHEDULE` = 1003 | `LISTBOX`（`LBS_NOTIFY｜WS_VSCROLL｜LBS_NOINTEGRALHEIGHT`） | 選択項目の `0x07` 名（**Effect / NPC 共通**。全件） | 項目確定時のみ（未選択は `EnableWindow(FALSE)`） |
 
 - `IDC_ACTION`（1003）の**値は据え置き**、名前のみ `IDC_SCHEDULE` に変更（差分を小さく保つ）。
 - 内部名: `g_hAction`→`g_hSchedule`、`g_ActionNames`→`g_ScheduleNames`、`PlaySelectedAction`→`PlaySelectedSchedule`、ログ接頭辞 `[action]`→`[schedule]`。
@@ -365,12 +365,14 @@ CommitSelection(index):                        // 唯一の確定経路
     同一グループ && index == 確定済み index → return      // キー移動・ダブルクリックの 2 回目を吸収
     ResolvePath 失敗 → ClearSelection("resolve failed", id)
     LoadDatFile 失敗 → ClearSelection("load failed", path)
-    Effect グループ:
-        Schedule を空・無効化、ラベル "Schedule (-)"、g_Effect.Reset()、g_Paused = false
-    NPC グループ:
+    共通（Effect / NPC）:
         g_ScheduleNames = g_Dat の 0x07 名（チャンク順。**全件**）
         Schedule へ LB_ADDSTRING → **`main` を既定選択**（無ければ先頭）。自動選択のみ／再生しない
         有効化、ラベル "Schedule (<件数>)"
+    Effect グループ:
+        既定 Schedule（`main`、無ければ先頭の 0x07）を構築して即再生（`BuildFromChunk`）／`g_Paused = false`
+    NPC グループ:
+        モデル表示（P1）と Schedule 一覧の提示のみ（自動再生しない）
     UpdateTitle()（EffectTest はタイトル/ログが表示更新点。モデル描画は P1）
 
 WM_COMMAND / IDC_SCHEDULE / LBN_SELCHANGE または LBN_DBLCLK
@@ -385,8 +387,8 @@ WM_COMMAND / IDC_SCHEDULE / LBN_SELCHANGE または LBN_DBLCLK
 | 状態 | `g_DatPath` | Schedule リスト | 画面 |
 |---|---|---|---|
 | 未選択（起動直後） | 空 | 空・無効 | 背景のみ（座標軸は既定 OFF） |
-| Effect 確定 | `…\ROM\11\17.DAT` | 空・無効 | エフェクト再生 |
-| NPC 確定 | `…\ROM\131\6.DAT` | 39 件・有効／先頭選択 | エフェクト無し（モデル描画は P1） |
+| Effect 確定 | `…\ROM\11\17.DAT` | **n 件・有効／`main` 選択**（例 1 件） | 既定 = `main` を再生。選択で他の `0x07` に切替 |
+| NPC 確定 | `…\ROM\131\6.DAT` | 39 件・有効／`main` または先頭を選択 | エフェクト無し（モデル描画は P1） |
 | 失敗 | 空 | 空・無効 | 背景のみ＋タイトルは案内文 |
 
 #### 4.7.5 失敗・空の扱い
@@ -396,6 +398,7 @@ WM_COMMAND / IDC_SCHEDULE / LBN_SELCHANGE または LBN_DBLCLK
 | `ResolvePath` 失敗（ROM 未インストール等） | `ClearSelection("resolve failed", id)`。**直前の表示を残さない**（§1 の起動時規約と整合） |
 | DAT 読み込み失敗（破損・0 バイト） | `ClearSelection("load failed", path)`。`DatFile::Load` は先頭で `Unload()` する（`Dat.cpp:8`）ため古い DAT は残らない |
 | `0x07` が 0 件 | 正常系。ラベル `Schedule (0)`、リスト有効・空、ログ `[schedule] count=0` |
+| Effect に `main` が無い | 先頭の `0x07` を既定にして再生し、ログに `[schedule] main なし` を出す（異常ではない） |
 | Schedule がタイムラインを持たない | ログのみ。再生位置は変えない |
 | ベース `ROM\0\0.DAT` 失敗 | 従来どおり警告のみで起動継続（R7） |
 
@@ -424,12 +427,14 @@ WM_COMMAND / IDC_SCHEDULE / LBN_SELCHANGE または LBN_DBLCLK
 | `LayoutPanel`（`:524`） | 3 要素 | 上記の式へ |
 | `FillItems`（`:575`） | `CB_RESETCONTENT` | 確定待ちの破棄（`g_PendingItem = -1`）、Schedule 空・無効、確定 index リセット |
 | `LoadListSelection`（`:599`） | 確定処理 | `CommitSelection` に改称（§4.7.3 の分岐） |
-| `PlaySelectedAction`（`:648`） | `g_ActionNames` | `PlaySelectedSchedule` に改称（中身は同一） |
+| `LoadDatFile`（`:282`） | `g_Effect.Build`（`main` 固定） | 既定 Schedule（`main`）を構築。以降の切替は `BuildFromChunk(name)` |
+| `PlaySelectedAction`（`:648`） | `g_ActionNames` / NPC 専用 | `PlaySelectedSchedule` に改称し、**Effect でも `g_Effect.BuildFromChunk(name)`** で再生。NPC は `g_ActionCtx` のまま |
 | `PanelProc`（`:686-704`） | `LBN_DBLCLK` のみ | `LBN_SELCHANGE` を追加（選択を pending に記録）、`IDC_SCHEDULE` の `LBN_SELCHANGE`/`LBN_DBLCLK`。**`WM_TIMER` は使わない** |
 | 描画ループ（`:1166-1182`） | `g_Effect.Advance(g_Dt)` のみ | 毎フレーム `TickPendingCommit()` を呼び、7 コマ静止で確定（`kCommitDelayFrames`） |
 | 新規ヘルパ | — | `ScheduleClear()` / `ClearSelection()` / `UpdateScheduleLabel()`（計 30 行程度） |
 
-- 変更しない: `Dat.*` / `Effect.*` / `EffectVm.*` / `ListDb.*` / `Tim.*` / `Gfx.*` / `EffectBase.*`
+- `Effect.*` は **§4.8 の範囲（開始オフセット自動判定・`+0xAC` のテクスチャ割当）でのみ**変更する。
+- `Dat.*` / `EffectVm.*` / `ListDb.*` / `Tim.*` / `Gfx.*` / `EffectBase.*` は変更しない。
 - 検証モードの引数と既存出力書式は不変（`--action` の出力はそのまま回帰確認に使う）。
 - 実装時は `ReadMe.md` の操作説明（「ダブルクリックで確定」→「単一選択で確定」、「Action」→「Schedule」）も更新する。
 
@@ -438,9 +443,11 @@ WM_COMMAND / IDC_SCHEDULE / LBN_SELCHANGE または LBN_DBLCLK
 | 層 | 手法 | ゴールデン |
 |---|---|---|
 | 回帰（List） | `--list` | 29 グループ / NPC ROM1 = 1,266 件 |
-| Schedule 列挙 | 新規 `--schedule <dat>`（1 行 1 件） | `ROM\131\6.DAT` の `0x07` = **39 件** |
+| Schedule 列挙 | `--action "<dat>"`（名前なし＝`0x07` 一覧。**新規フラグなし**） | `ROM\131\6.DAT` = **39 件**、`ROM\11\17.DAT` = 1 件（main）、`ROM\119\85.DAT` = 5 件 |
+| Effect のサブ Schedule | `--action "…\12\43.DAT" hit1` / UI で選択 | `main` 以外も timeline 非空で再生できる |
 | 回帰（Effect） | `--shot "…\ROM\11\17.DAT" out.png` | timeline=18 / spawn=8 / 3.3333 s / 非背景 > 6,000 |
 | UI 手動 | `NPC ROM1` → `ヒューム♀NPC (3-11)` を**シングルクリック** | ラベル `Schedule (n)`、リストに `0x07` 名が並ぶ |
+| UI 手動（Effect） | `Black Magic` → `Fire II (11/18)` をシングルクリック → Schedule で `main` 以外があれば選択 | ラベル `Schedule (n)`、**選択のたびに再生が切り替わる** |
 | UI 手動（失敗系） | 存在しない ROM / 壊れた DAT | 背景のみに戻り、ログに `clear:` |
 | 性能 | ↑↓ 長押し **120 コマ（2 秒）**・連続クリック（60 fps 維持を計測） | §4.7.6 の目標値 |
 
@@ -474,6 +481,7 @@ WM_COMMAND / IDC_SCHEDULE / LBN_SELCHANGE または LBN_DBLCLK
 実測結果: 11/17=+0x80（18 命令） / 11/18=+0x74（20 命令） / 11/22=+0xA0（18 命令）
 ```
 
+> 現行 `DetectProgramStart()`（`Effect.cpp:42-77`）の候補は 7 個（`0x80`/`0x50`/`0x40`/`0x60`/`0x70`/`0x90`/`0xA0`）に固定されており、実測にある `0x74`/`0x7C`/`0xA8`/`0x11C` 等を取りこぼす。**全候補走査**に置き換える。
 > `+0x80` 固定の現行実装では **`11/18`・`11/22` が 0 命令**（＝表示できない）。判定は `main` にも適用する。
 
 #### 4.8.3 必要資源の算出（C / D / E）
@@ -556,6 +564,8 @@ needed20 = { link(g) | g ∈ needed05 かつ link(g) が 0x20 }                 
 
 → **設計 §4.7 の Schedule リストは `0x07` を全件列挙し、既定選択は `main`**（先頭行ではなく名前で選ぶ）。
 
+> **役割（target / cast / damage 等）は命名からの推定であり未確定**。確定には AltanaView の呼び出し元解析が必要（§4.9.5-6）。
+
 #### 4.9.3 尺（`main` ヘッダ +0x2C のフレーム数、60 fps 基準）
 
 | 尺 | 件数 |
@@ -596,11 +606,14 @@ needed20 = { link(g) | g ∈ needed05 かつ link(g) が 0x20 }                 
 
 #### 4.9.5 設計への反映（要点）
 
-1. **Schedule リスト = `0x07` 全件**（§4.7）。既定は `main`。サブ Schedule（`tgt0`/`cas0`/`damg`…）を選べることで AltanaView と同等になる
+1. **Schedule リスト = `0x07` 全件**（§4.7。**Effect / NPC 共通**）。既定は `main`。これで AltanaView と同じ「Schedule を選べる」状態になる。
+   - 現行の不足は 3 点: **A** 構築が `main` 固定（`Effect.cpp:26-29`）、**B** UI に選択手段がない、**C** `main` の開始位置も `+0x80` 固定（`11/18`・`11/22` は 0 命令）
+   - A/B は §4.7 で解消（`BuildFromChunk` は既存）。C は §4.8.2 で解消
 2. **尺の表示**はヘッダ `+0x2C` から取得（命令列パース不要）。タイトル/ログに `dur=<frames>/60` を出せる
 3. **資源限定**は意味が大きい（generator 17+ が 1,023 件、texture 6–10 が 1,734 件）
 4. **`nulp` が 1,245 件**（最多の未解決）→ 白テクスチャ代替が常態（R10）。見た目差の主要因になり得る
 5. 命令列の**開始位置は DAT ごとに異なる**。単純な最長一致では誤判定する（実測: Fire を `+0x50`/22 命令と誤判定）→ §4.8.2 の判定は「既知 op ＋ 名前解決 ＋ ヘッダ」を併用し、`--selftest` の `prog=` で検証する
+6. サブ Schedule の**役割**（`tgt0`=target / `cas0`=cast / `damg`=damage 等）は**命名からの推定**。確定には AltanaView 側の解析が必要で、**同時再生は本設計の対象外**（手動選択で単体再生する）
 
 #### 4.9.6 ゴールデン（代表 6 件）
 
@@ -674,6 +687,7 @@ ModelTest.exe --action "ROM\131\6.DAT" atk0
 - **開始オフセットの自動判定**: `11\18`（+0x74）・`11\22`（+0xA0）でも命令列が取れる（+0x80 固定では 0 命令）
 - **テクスチャ割当**: generator の `+0xAC` により `fai0`/`fai1`/`fai2` が別テクスチャで描かれる
 - **資源限定**: 未参照テクスチャ（`fai3` 等）を読み込まない（`--selftest` の `tex=` と外部スクリプトの必要集合が §4.8.3 と一致）
+- **Schedule の切替**: `12\43`（Foe Requiem）で `hit1` を選ぶと `main` と別の再生になる（`BuildFromChunk` 経路の確認）
 **検証**
 ```
 ModelTest.exe --effect "ROM\11\17.DAT" --shot out_fire.png
@@ -711,6 +725,7 @@ tools\EffectRes.ps1 "ROM\11\17.DAT"
 | Effect | ヘッドレス `--effect` | 18 命令 / 8 生成 / 3.3333 s（EffectTest と一致） |
 | 開始オフセット | `--selftest` の `prog=0x..` | `11\17`=0x80/18、`11\18`=0x74/20、`11\22`=0xA0/18 |
 | 必要資源 | 外部スクリプト `tools\EffectRes.ps1 <dat>` | §4.8.3 の表と一致（gen 8/8・tex 3/5 等。`fai3` を除外） |
+| Schedule 切替（Effect） | `--action "<dat>" <name>`（既存 CLI） | `12\43` の `hit1` が timeline 非空。`119\85` は `0x07` が 5 件 |
 | 描画 | `--shot` で PNG → 画素検査 | 非背景サンプル数・最大 RGB 和 |
 | 回帰 | 既存の PC/NPC 表示、4 面図、保存系 | 例外・クラッシュなし、出力ファイル生成 |
 
@@ -733,6 +748,7 @@ tools\EffectRes.ps1 "ROM\11\17.DAT"
 | R9 | `+0xAC` が `0x21`（テクスチャフレーム）を指す場合 | 将来フレームアニメを実装したときの追加要求 | **意味は確定済み**（`0x21`＝フレーム。実測では追加の `0x20` を要求しない）。実装時は型 `0x21` を読み飛ばす |
 | R10 | `dist` / `nulp` | 該当 generator がテクスチャ無しになる | **解決済み**: `dist` は距離ベースの予約語、`nulp` は参照先が存在しない。どちらも白テクスチャで代替しログに記録（解析 §7） |
 | R11 | 遅延 SRV の寿命・上限 | メモリ増／解放漏れ | LRU（上限は実装計画で決定）。`EffectContext::ReleaseTextures()` で全解放（既存 API） |
+| R12 | サブ Schedule（`tgt0`/`cas0`/`damg`…）の**開始オフセットと役割**が未確定 | 選んでも 0 命令になる／意味を取り違える | §4.8.2 の全候補走査で `prog` を判定し、0 命令ならログ警告。役割は**命名からの推定**と明記（同時再生は非対象） |
 
 ---
 
