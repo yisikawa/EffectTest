@@ -159,6 +159,9 @@ struct SubUnit
     int       frameIdx      = 0;                          // 現在のフレーム番号
     float     quadHalf[2]   = { 0.0f, 0.0f };             // 0x21 クワッドの半幅・半高
     float     quadCenter[2] = { 0.0f, 0.0f };             // 同・中心オフセット
+    // キーフレーム表のオフセット（VM#1 の 0x21..0x2F / 0x33..0x36 / 0x59..0x5B が設定）
+    //   AltanaView の particle[dest+0x43] に相当（0 = 未設定）
+    uint32_t  keyOff[SUB_DEST_N] = {};
 };
 
 //----------------------------------------------------------------------

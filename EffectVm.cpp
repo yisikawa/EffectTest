@@ -16,6 +16,39 @@
 
 namespace
 {
+    // キーフレーム表の線形補間（AltanaView FUN_0040f820 の移植・簡略版）
+    //   表は 8 バイト単位の [time, value]。time は t01（0..1）の領域。
+    //   状態を持たず毎回先頭から t01 まで走査する（元実装はポインタを進めるだけ）。
+    float EvalKeyTrack(const DatFile& dat, uint32_t off, float t01, float scale)
+    {
+        if (off == 0u || !dat.InRange(off, 8)) return 0.0f;
+        const uint8_t* p = dat.At(off);
+        if (p == nullptr) return 0.0f;
+
+        float prevT = 0.0f, prevV = 0.0f;
+        bool  have  = false;
+        for (int i = 0; i < 64; ++i)
+        {
+            const uint32_t e = off + (uint32_t)i * 8u;
+            if (!dat.InRange(e, 8)) break;
+            const uint8_t* q = dat.At(e);
+            float t = 0.0f, v = 0.0f;
+            memcpy(&t, q + 0, 4);
+            memcpy(&v, q + 4, 4);
+            if (t < -1e6f || t > 1e6f || v < -1e12f || v > 1e12f) break;   // 異常値は打ち切り
+
+            if (!have) { prevT = t; prevV = v; have = true; continue; }
+            if (t01 <= t)
+            {
+                const float dt = t - prevT;
+                if (dt <= 1e-6f) return scale * v;
+                return scale * (prevV + (t01 - prevT) * (v - prevV) / dt);
+            }
+            prevT = t; prevV = v;
+        }
+        return have ? (scale * prevV) : 0.0f;
+    }
+
     inline float Rand01() { return (float)rand() / (float)RAND_MAX; }
     // 0..255 の乱数（AltanaView FUN_0044c55c。色バイトやジッタ量に使われる）
     inline int RandByte() { return (int)(Rand01() * 256.0f) & 0xFF; }
@@ -74,6 +107,16 @@ static void Vm1(const MotionInstance& mi, SubUnit& su, const EffectContext& ctx)
         const uint32_t dest = w0 >> 13;
         float* d = (dest < SUB_DEST_N) ? su.sub.Dest(dest) : nullptr;
 
+        //--- キーフレーム表ポインタの設定（実測 FUN_0040e0b0 L11030-11037）
+        //   `(0x20<op<0x30) || (0x32<op<0x37) || (0x58<op<0x5c)`
+        //   → particle[dest+0x43] = 命令の 3 番目の dword（= 表のオフセット）
+        if ((op > 0x20 && op < 0x30) || (op > 0x32 && op < 0x37) || (op > 0x58 && op < 0x5C))
+        {
+            uint32_t off = 0;
+            memcpy(&off, p + 8, 4);
+            if (dest < SUB_DEST_N) su.keyOff[dest] = off;
+        }
+        else
         switch (op)
         {
         //--- 定数 float3 → 出力スロット ---------------------------------
@@ -345,6 +388,28 @@ static bool Vm2(const MotionInstance& mi, SubUnit& su, float dt, float rootDurat
                 d[0] *= r; d[1] *= r; d[2] *= r;
             }
             break;
+
+        //--- キーフレーム補間（実測 FUN_0040f4b0 L12136: 0x0E < op < 0x22）
+        //   出力先は **op で決まる固定スロット** = (op + 0x11) * 4 バイト
+        //     0x0F..0x11 → Pos(0x80) / 0x12..0x14 → Move(0x8C, ×π) /
+        //     0x15..0x17 → Scale(0x98) / 0x18..0x1B → Color(0xA4) /
+        //     0x1C..0x21 → UV(0xB4..)
+        //   キー表は VM#1 の 0x21..0x2F 等が dest スロットに設定したオフセット
+        case 0x0F: case 0x10: case 0x11: case 0x12: case 0x13: case 0x14:
+        case 0x15: case 0x16: case 0x17: case 0x18: case 0x19: case 0x1A:
+        case 0x1B: case 0x1C: case 0x1D: case 0x1E: case 0x1F:
+        case 0x20: case 0x21:
+        {
+            const uint32_t off = (dest < SUB_DEST_N) ? su.keyOff[dest] : 0u;
+            if (off != 0u)
+            {
+                // 0x12..0x14 は角度（度 → ラジアン）
+                const float scale = (op >= 0x12 && op <= 0x14) ? 3.14159265f : 1.0f;
+                float* outSlot = su.sub.At(((uint32_t)op + 0x11u) * 4u);
+                outSlot[0] = EvalKeyTrack(*mi.dat, off, su.sub.T01(), scale);
+            }
+            break;
+        }
 
         // UV オフセット（AltanaView: `puVar9[op + 6] += k * arg[0]`）
         //   op 0x27 → スロット 0x2D (=0xB4:u) / op 0x28 → 0x2E (=0xB8:v)
