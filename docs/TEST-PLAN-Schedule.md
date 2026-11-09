@@ -66,7 +66,7 @@
 | T-01 | `--selftest "…\11\17.DAT"` → `prog` 行 | `prog      = 0x50` | ○ |
 | T-02 | 同上 → `timeline` 行 | `timeline  = 22 insts, duration=3.3333s` | ○ |
 | T-03 | 同上 → `spawn(op=0x02)` 行 | `spawn(op=0x02)=8` | ○ |
-| T-04 | 同上 → `tex=` を含む行（frame 0〜11/59/119/239） | `tex=0`,`tex=1`,`tex=2` が出現し、`fai0`/`fai1`/`fai2` に対応 | ○ |
+| T-04 | 同上 → `tex=` を含む行（frame 0〜11/59/119/239） | `tex=0`,`tex=1`,`tex=2` が出現。`fai0`→**`tex=2`**（specific `fai01` = 256×256）、`fai1`→`tex=1`、`fai2`→`tex=0` | ○ |
 | T-05 | `--selftest "…\11\18.DAT"` | `timeline  = 23 insts, duration=4.1667s`（修正前は **0 insts**） | ○ |
 | T-05b | `--selftest "…\11\22.DAT"` | `timeline  = 23 insts, duration=4.5167s`、`tex=0`/`tex=2` | ○ |
 | T-07 | `--selftest "…\162\50.DAT"` | `sum0` 等の timeline でない `0x07` は **0 命令**（空扱い）。クラッシュしない | ○ |
@@ -82,8 +82,8 @@
 | ID | 手順 | 期待 | 自動 |
 |---|---|---|---|
 | T-09 | `--shot "…\11\17.DAT" out_fire.png` | `[shot] ... blend=alpha_add uvmode=0x21 inst=8 tex=5 ok=1`、非背景 **7,968** / maxSum **686**（4px 間引き 57,600 点） | △（GPU 必須） |
-| T-09b | `--shot "…\11\18.DAT" out_fire2.png` | `ok=1` ＆ 非背景 **2,947** / maxSum 725（修正前は 0） | △ |
-| T-16 | `--shot --uv full "…\11\18.DAT"` | `uvmode=full`、非背景 **3,701**（既定 `0x21` は 2,947） | △ |
+| T-09b | `--shot "…\11\18.DAT" out_fire2.png` | `ok=1` ＆ 非背景 **2,780** / maxSum 713（修正前は 0） | △ |
+| T-16 | `--shot --uv full "…\11\18.DAT"` | `uvmode=full`、非背景 **2,484**（既定 `0x21` は 2,780） | △ |
 
 ### T4 UI 手動
 

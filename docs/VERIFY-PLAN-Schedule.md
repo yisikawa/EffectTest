@@ -131,7 +131,7 @@ Expected: `ok=1`、`blend=alpha_add`、`uvmode=0x21`。`out_fire.png` が生成�
 ```powershell
 .\x64\Release\EffectTest.exe --shot "$ROM\11\18.DAT" out_fire2.png
 ```
-Expected: `ok=1`・非背景 **2,947** / maxSum 725（`--uv full` は 3,701。修正前は 0 命令で非背景 0）
+Expected: `ok=1`・非背景 **2,780** / maxSum 713（`--uv full` は 2,484。修正前は 0 命令で非背景 0）
 
 ### V-09 GUI（T-10a〜e / T-11）
 
@@ -195,7 +195,7 @@ Expected（`[shot] … blend=<mode>` が指定どおり）:
 | `alpha_add`（既定） | `alpha_add` | 約 7,968 | **686** |
 | `alpha` | `alpha` | 約 6,527 | **639** |
 
-`--blend` を省略したとき `blend=alpha_add` になること（`11\18` = 2,947、`11\22` = 6,596、`12\43` = 13,150 / maxSum 560）。UV は既定 `0x21`。
+`--blend` を省略したとき `blend=alpha_add` になること（`11\18` = 2,780、`11\22` = 6,596、`12\43` = 13,150 / maxSum 560）。UV は既定 `0x21`。
 
 ### V-14 テクスチャフレーム（T-15 / T-16）
 
@@ -216,7 +216,7 @@ Start-Process -FilePath $exe -ArgumentList @('--shot','--uv','full', ('"' + $dat
 Select-String -Path effecttest_log.txt -Pattern '^\[shot\] dat='
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\ShotStats.ps1 -Path $out
 ```
-Expected: `uvmode=full`、非背景 **3,701**（既定 `0x21` は 2,947）。`12\43` は `0x21` を持たないため `0x21`/`full` とも 13,150。
+Expected: `uvmode=full`、非背景 **2,484**（既定 `0x21` は 2,780）。`12\43` は `0x21` を持たないため `0x21`/`full` とも 13,150。
 
 ## 5. ゴールデン表（数値の根拠）
 
@@ -255,15 +255,15 @@ Expected: `uvmode=full`、非背景 **3,701**（既定 `0x21` は 2,947）。`12
 | V-01 | ✅ | `prog = 0x50`（11/17, 11/18, 11/22） |
 | V-02 | ✅ | 22 / 23 / 23 insts、3.3333 / 4.1667 / 4.5167 s |
 | V-03 | ✅ | `spawn(op=0x02)=8` |
-| V-04 | ✅ | Fire `tex=0,1,-1,2` / Blizzard `tex=0,-1,2`（`-1` は `0x1F`/base 依存で正常） |
+| V-04 | ✅ | Fire `tex=0,1,-1,2` / Blizzard `tex=0,-1,2`（`-1` は `0x1F`/base 依存で正常）。`fai0`→`tex=2`（specific `fai01` の 256×256） |
 | V-05 | ✅ | `22 gen=8/8 tex=3/5 base=2 unused=2` / `23 11/11 3/7 1 4` / `23 14/14 2/6 0 4` |
 | V-06 | ✅ | NPC `131/6` = 39 件、`12/43` = `main,hit1` |
 | V-07 | ✅ | `prog=0x50`、`timeline = 13 insts, duration=8.3333s`、exit 0（timeline でない `0x07`（`sum0` 等）を含む DAT でもクラッシュしない） |
-| V-08 | ✅ | `ok=1`、`blend=alpha_add`、`uvmode=0x21`。非背景 **7,968**（Fire）/ **2,947**（Fire II）。最大 RGB 和 686 / 725（`--uv full` は 7,950 / 3,701） |
+| V-08 | ✅ | `ok=1`、`blend=alpha_add`、`uvmode=0x21`。非背景 **7,968**（Fire）/ **2,780**（Fire II）。最大 RGB 和 686 / 713（`--uv full` は 7,950 / 2,484） |
 | V-11（Phase 2） | ✅ | `--shot` で `[base] … tex=61 load_ms=4`、`g006 link=hit6 srv≠0` / `g005 link=hi17 srv≠0`（base の `0x20` を借用）。`gs00`(0x3D)・`g003`(0x1F) は `srv=0`（白）で正常 |
 | V-12（入れ子） | ✅ | `12\43`: `subtl = 1`（`main`→`hit1`）、`timeline = 9 insts`、`--shot` で `inst=8 ok=1`・非背景 **13,150**（修正前は main 単体で 0） |
 | V-13（合成） | ✅ | 既定 `blend=alpha_add`。Fire 非背景 7,968 / maxSum 686（`add`=8,206/765、`alpha`=6,527/639）。`12\43` は 13,150 / 560 |
-| V-14（0x21） | ✅ | `frm=` が `g004`/`g001`=16、`g000`/`g002`=1、他 0(none)。既定 `0x21` で Fire II 3,701→**2,947**、Fire 7,950→7,968、Blizzard/`12\43` は不変 |
+| V-14（0x21） | ✅ | `frm=` が `g004`/`g001`=16、`g000`/`g002`=1、他 0(none)。テクスチャは specific 名で解決（`fai0`→`fai01`=256×256、`fai1`→`fai02`、`fai2`→`fai03`）。Fire II は `--uv full` 2,484 → 既定 **2,780** |
 | V-09 | 未実施 | GUI のクリック操作（手動） |
 | V-10 | ✅ | `groups=29` / `NPC ROM1 items=1266` |
 

@@ -13,9 +13,11 @@
 //    +0x28 : エントリ列。各エントリ = ヘッダ + cnt × 0x90 バイト
 //            ヘッダ +2 が cnt。0x90 = 6 頂点 × 24 B（x,y,z,color,u,v）
 //----------------------------------------------------------------------
-static bool ParseTexFrames(const DatFile& dat, const char* name4, std::vector<TexFrame>& out)
+static bool ParseTexFrames(const DatFile& dat, const char* name4, std::vector<TexFrame>& out,
+                           char outSpecific[9])
 {
     out.clear();
+    if (outSpecific != nullptr) outSpecific[0] = '\0';
     if (name4 == nullptr || name4[0] == '\0') return false;
 
     const DatChunk* c = dat.Find(name4, 0x21);
@@ -23,6 +25,15 @@ static bool ParseTexFrames(const DatFile& dat, const char* name4, std::vector<Te
 
     const uint8_t* p = dat.At(c->offset);
     if (p == nullptr) return false;
+
+    // +0x20 = specific 名（8 文字）。テクスチャ（0x20）の 16 B 名の後半と一致する
+    if (outSpecific != nullptr)
+    {
+        memcpy(outSpecific, p + 0x20, 8);
+        outSpecific[8] = '\0';
+        for (int i = 7; i >= 0 && (outSpecific[i] == ' ' || outSpecific[i] == '\0'); --i)
+            outSpecific[i] = '\0';
+    }
 
     uint16_t entries = 0;
     memcpy(&entries, p + 0x12, 2);
@@ -118,7 +129,22 @@ bool EffectContext::BuildInternal(const DatFile& dat, const char* mainChunkName)
     //--------------------------------------------------------------
     for (const DatChunk& c : dat.Chunks())
     {
-        if (c.type == 0x20) { m_TexNames.push_back(c.name); continue; }   // texIndex の基準順
+        if (c.type == 0x20)
+        {
+            m_TexNames.push_back(c.name);                    // texIndex の基準順
+
+            // 0x20 の 16 B 名（+17）は「グループ名 8 + specific 名 8」。
+            // specific 名は 0x21 の +0x20 が指す名前で、テクスチャ解決に使う。
+            std::string spec;
+            if (dat.InRange(c.offset + 17, 16))
+            {
+                const uint8_t* tn = dat.At(c.offset + 17);
+                spec.assign(reinterpret_cast<const char*>(tn) + 8, 8);
+                while (!spec.empty() && (spec.back() == ' ' || spec.back() == '\0')) spec.pop_back();
+            }
+            m_TexSpecific.push_back(spec);
+            continue;
+        }
         if (c.type != 0x05) continue;
         if (c.size <= 0x90) continue;                       // ヘッダ 0x90 に満たない
         if (!dat.InRange(c.offset, c.size)) continue;
@@ -140,8 +166,8 @@ bool EffectContext::BuildInternal(const DatFile& dat, const char* mainChunkName)
             g.linkName[4] = '\0';
         }
 
-        // 同名の 0x21（テクスチャフレーム）があれば UV 矩形を取り込む
-        ParseTexFrames(dat, g.linkName, g.texFrames);
+        // 同名の 0x21（テクスチャフレーム）があれば UV 矩形と specific 名を取り込む
+        ParseTexFrames(dat, g.linkName, g.texFrames, g.texName);
 
         uint32_t o = 0;
         memcpy(&o, p + 0x80, 4); g.tblA = g.payloadOff + (o - 0x90);
@@ -423,7 +449,10 @@ void EffectContext::Spawn(const char* name4, float startSec, int op)
     if (g == nullptr) return;
 
     MotionInstance mi;
-    const int tex = FindTextureIndex(g->linkName);   // +0xAC のリンク名から 0x20 を解決
+    // テクスチャ解決: 0x21 の specific 名（あれば）→ +0xAC のリンク名 の順
+    int tex = -1;
+    if (g->texName[0] != '\0') tex = FindTextureIndexBySpecific(g->texName);
+    if (tex < 0) tex = FindTextureIndex(g->linkName);
     mi.Reset(m_Dat, g, startSec, tex, op);
 
     // 描画に使う SRV（借用）: ローカル 0x20 → base の 0x20 の順で解決
@@ -460,6 +489,20 @@ int EffectContext::FindTextureIndex(const char* name4) const
     for (size_t i = 0; i < m_TexNames.size(); ++i)
     {
         if (memcmp(m_TexNames[i].c_str(), name4, 4) == 0) return (int)i;
+    }
+    return -1;
+}
+
+// 0x21 の specific 名（8 文字）→ 0x20 テクスチャ番号
+//   0x20 の 16 B 名は「グループ 8 + specific 8」なので後半で照合する
+int EffectContext::FindTextureIndexBySpecific(const char* name8) const
+{
+    if (name8 == nullptr || name8[0] == '\0') return -1;
+    const size_t n = strlen(name8);
+    for (size_t i = 0; i < m_TexSpecific.size(); ++i)
+    {
+        if (m_TexSpecific[i].size() == n && memcmp(m_TexSpecific[i].c_str(), name8, n) == 0)
+            return (int)i;
     }
     return -1;
 }

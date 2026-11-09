@@ -111,6 +111,7 @@ struct GeneratorBlock
     uint8_t  count    = 0;      // +0x78
     uint8_t  flag     = 0;      // +0x79
     char     linkName[5] = {};  // +0xAC の 4 文字リンク名（0x20/0x1F/0x21/0x3D/base/予約語）
+    char     texName[9]  = {};  // 同名 0x21 の +0x20（specific 名 8 文字）。テクスチャ解決に使う
     std::vector<TexFrame> texFrames;   // 同名の 0x21 があればそのフレーム列（無ければ空）
 
     inline bool HasFrames() const { return !texFrames.empty(); }
@@ -181,7 +182,8 @@ public:
     const uint8_t* LastColor() const { return m_LastColor; }
 
     const GeneratorBlock* FindGenerator(const char* name4) const;
-    int FindTextureIndex(const char* name4) const;   // +0xAC のリンク名 → 0x20 の番号（無ければ -1）
+    int FindTextureIndex(const char* name4) const;
+    int FindTextureIndexBySpecific(const char* name8) const;   // +0xAC のリンク名 → 0x20 の番号（無ければ -1）
     void SetBaseTexture(const class EffectBase* base) { m_Base = base; }  // base の 0x20 を借用する
     size_t SubTimelineCount() const { return m_Subs.size(); }
     ID3D11ShaderResourceView* TextureSrv(int index) const;
@@ -212,6 +214,7 @@ private:
     std::vector<MotionInstance> m_Instances;
     std::vector<TimTexture>     m_Textures;
     std::vector<std::string>    m_TexNames;   // 0x20 チャンク名（チャンク順。texIndex の基準）
+    std::vector<std::string>    m_TexSpecific; // 0x20 の 16 B 名の後半 8 文字（specific 名）
 
     uint32_t m_ProgStart = 0;   // 0x07 の命令列開始（+0x50 固定）
     size_t   m_Ip       = 0;
