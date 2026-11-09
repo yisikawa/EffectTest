@@ -63,21 +63,30 @@ namespace
     //--------------------------------------------------------------
     ListDb   g_List;
     char     g_FfxiBase[MAX_PATH] = {};
-    HWND     g_hPanel  = nullptr;
-    HWND     g_hGroup  = nullptr;
-    HWND     g_hItems  = nullptr;
-    HWND     g_hAction = nullptr;
+    HWND     g_hPanel         = nullptr;
+    HWND     g_hGroup         = nullptr;
+    HWND     g_hItems         = nullptr;
+    HWND     g_hSchedule      = nullptr;
+    HWND     g_hScheduleLabel = nullptr;
 
-    EffectContext            g_ActionCtx;          // NPC アクション（0x07）用
+    EffectContext            g_ActionCtx;          // NPC の 0x07 用
     bool                     g_ActionActive = false;
-    std::vector<std::string> g_ActionNames;
+    std::vector<std::string> g_ScheduleNames;
+
+    int  g_PendingItem    = -1;    // 確定待ちの項目 index
+    int  g_PendingFrames  = 0;     // 静止コマ数
+    int  g_CommittedItem  = -1;
+    int  g_CommittedGroup = -1;
+    bool g_CommitBusy     = false;
+
+    const int kCommitDelayFrames = 7;   // 60 fps で 116.7 ms（設計 §4.7.1 D4）
 
     EffectBase               g_Base;               // ベースエフェクト（ROM\0\0.DAT）
 
     const wchar_t* kPanelClass = L"EffectTestPanel";
 
     // コントロール ID
-    enum : int { IDC_GROUP = 1001, IDC_ITEMS = 1002, IDC_ACTION = 1003 };
+    enum : int { IDC_GROUP = 1001, IDC_ITEMS = 1002, IDC_SCHEDULE = 1003, IDC_SCHEDULE_LABEL = 1004 };
 }
 
 static bool LoadDatFile(const char* path);
@@ -93,8 +102,12 @@ static void OpenFileDialog();
 static void BuildPanelControls(HWND hPanel);
 static void FillGroups();
 static void FillItems();
-static void LoadListSelection(int itemIndex);
-static void PlaySelectedAction(int actionIndex);
+static void CommitSelection(int itemIndex);
+static void PlaySelectedSchedule(int index);
+static void TickPendingCommit();
+static void ScheduleClear();
+static void ClearSelection();
+static void UpdateScheduleLabel(int count);
 static LRESULT CALLBACK PanelProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp);
 
 //----------------------------------------------------------------------
@@ -521,6 +534,42 @@ static std::wstring Widen(const std::string& s)
     return w;
 }
 
+static void UpdateScheduleLabel(int count)
+{
+    if (g_hScheduleLabel == nullptr) return;
+    wchar_t buf[64];
+    if (count < 0) wcscpy_s(buf, L"Schedule  (-)");
+    else           swprintf_s(buf, L"Schedule  (%d)", count);
+    SetWindowTextW(g_hScheduleLabel, buf);
+}
+
+static void ScheduleClear()
+{
+    if (g_hSchedule != nullptr)
+    {
+        SendMessageW(g_hSchedule, LB_RESETCONTENT, 0, 0);
+        EnableWindow(g_hSchedule, FALSE);
+    }
+    g_ScheduleNames.clear();
+    UpdateScheduleLabel(-1);
+}
+
+static void ClearSelection()
+{
+    g_Effect.ReleaseTextures();
+    g_Effect.Reset();
+    g_ActionCtx.Reset();
+    g_ActionActive = false;
+    ScheduleClear();
+    g_Dat.Unload();
+    g_DatPath.clear();
+    g_CommittedItem = -1;
+    g_CommittedGroup = -1;
+    g_PendingItem = -1;
+    g_PendingFrames = 0;
+    UpdateTitle();
+}
+
 static void LayoutPanel(HWND hPanel)
 {
     RECT rc = {};
@@ -529,9 +578,16 @@ static void LayoutPanel(HWND hPanel)
     if (w < 80) return;
 
     const int bottom = rc.bottom;
-    MoveWindow(g_hGroup,  8, 8, w, 240, TRUE);                 // ドロップダウン高さ
-    MoveWindow(g_hAction, 8, bottom - 8 - 240, w, 240, TRUE);
-    MoveWindow(g_hItems,  8, 40, w, bottom - 40 - 280, TRUE);
+    const int schedH = (bottom < 320) ? 96 : 128;
+    const int labelH = 18;
+
+    MoveWindow(g_hGroup, 8, 8, w, 200, TRUE);
+    MoveWindow(g_hSchedule, 8, bottom - 8 - schedH, w, schedH, TRUE);
+    MoveWindow(g_hScheduleLabel, 8, bottom - 8 - schedH - labelH - 4, w, labelH, TRUE);
+
+    int itemsH = bottom - 8 - schedH - labelH - 4 - 8 - 40;
+    if (itemsH < 64) itemsH = 64;
+    MoveWindow(g_hItems, 8, 40, w, itemsH, TRUE);
 }
 
 static void BuildPanelControls(HWND hPanel)
@@ -546,9 +602,14 @@ static void BuildPanelControls(HWND hPanel)
                                WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOINTEGRALHEIGHT | LBS_NOTIFY,
                                8, 40, 320, 320, hPanel, (HMENU)IDC_ITEMS, hi, nullptr);
 
-    g_hAction = CreateWindowExW(0, L"COMBOBOX", L"",
-                                WS_CHILD | WS_VISIBLE | WS_VSCROLL | CBS_DROPDOWNLIST,
-                                8, 400, 320, 240, hPanel, (HMENU)IDC_ACTION, hi, nullptr);
+    g_hScheduleLabel = CreateWindowExW(0, L"STATIC", L"Schedule  (-)",
+                                       WS_CHILD | WS_VISIBLE,
+                                       8, 400, 320, 18, hPanel, (HMENU)IDC_SCHEDULE_LABEL, hi, nullptr);
+
+    g_hSchedule = CreateWindowExW(WS_EX_CLIENTEDGE, L"LISTBOX", L"",
+                                  WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOINTEGRALHEIGHT | LBS_NOTIFY,
+                                  8, 420, 320, 128, hPanel, (HMENU)IDC_SCHEDULE, hi, nullptr);
+    EnableWindow(g_hSchedule, FALSE);
 
     FillGroups();
     LayoutPanel(hPanel);
@@ -578,9 +639,12 @@ static void FillItems()
 
     const int gi = (int)SendMessageW(g_hGroup, CB_GETCURSEL, 0, 0);
     SendMessageW(g_hItems,  LB_RESETCONTENT, 0, 0);
-    SendMessageW(g_hAction, CB_RESETCONTENT, 0, 0);
-    g_ActionNames.clear();
+    ScheduleClear();
     g_ActionActive = false;
+    g_PendingItem = -1;
+    g_PendingFrames = 0;
+    g_CommittedItem = -1;
+    g_CommittedGroup = -1;
 
     if (gi < 0) return;
 
@@ -594,78 +658,113 @@ static void FillItems()
 }
 
 //----------------------------------------------------------------------
-// 項目をダブルクリック → DAT を開く
+// 項目の確定（唯一の経路）。Effect / NPC 共通で 0x07 を全件列挙する
 //----------------------------------------------------------------------
-static void LoadListSelection(int itemIndex)
+static void CommitSelection(int itemIndex)
 {
     const int gi = (int)SendMessageA(g_hGroup, CB_GETCURSEL, 0, 0);
-    if (gi < 0) return;
+    if (gi < 0 || g_CommitBusy) return;
+    if (gi == g_CommittedGroup && itemIndex == g_CommittedItem) return;
 
     const ListGroup& g = g_List.Group((size_t)gi);
     const std::vector<ListItem>& items = g_List.Items((size_t)gi);
     if (itemIndex < 0 || itemIndex >= (int)items.size()) return;
 
+    g_CommitBusy = true;
+
     char path[MAX_PATH] = {};
     if (!ListDb::ResolvePath(g_FfxiBase, g, items[itemIndex], path, MAX_PATH))
     {
-        Log("[list] resolve failed: %s", items[itemIndex].id.c_str());
+        Log("[schedule] clear: resolve failed %s", items[itemIndex].id.c_str());
+        ClearSelection();
+        g_CommitBusy = false;
         return;
     }
 
-    Log("[list] open %s -> %s", items[itemIndex].name.c_str(), path);
     if (!LoadDatFile(path))
     {
-        Log("[list] load failed: %s", path);
+        Log("[schedule] clear: load failed %s", path);
+        ClearSelection();
+        g_CommitBusy = false;
         return;
     }
 
-    SendMessageW(g_hAction, CB_RESETCONTENT, 0, 0);
-    g_ActionNames.clear();
-    g_ActionActive = false;
+    // 0x07 を全件列挙（Effect / NPC 共通）
+    ScheduleClear();
+    for (const DatChunk& c : g_Dat.Chunks())
+        if (c.type == 0x07) g_ScheduleNames.push_back(c.name);
 
-    if (g.isEffect)
+    for (const std::string& n : g_ScheduleNames)
+        SendMessageW(g_hSchedule, LB_ADDSTRING, 0, (LPARAM)Widen(n).c_str());
+
+    int def = 0;
+    for (size_t i = 0; i < g_ScheduleNames.size(); ++i)
+        if (g_ScheduleNames[i] == "main") { def = (int)i; break; }
+    if (!g_ScheduleNames.empty()) SendMessageW(g_hSchedule, LB_SETCURSEL, def, 0);
+    EnableWindow(g_hSchedule, TRUE);
+    UpdateScheduleLabel((int)g_ScheduleNames.size());
+    Log("[schedule] count=%zu", g_ScheduleNames.size());
+
+    // Effect: LoadDatFile が既定（main）を構築済み。既定と同一なら再構築しない
+    if (g.isEffect && !g_ScheduleNames.empty())
     {
-        g_Effect.Reset();
+        if (g_ScheduleNames[def] != "main") PlaySelectedSchedule(def);
         g_Paused = false;
     }
-    else
-    {
-        // NPC: 0x07 = アクションのタイムライン
-        for (const DatChunk& c : g_Dat.Chunks())
-            if (c.type == 0x07) g_ActionNames.push_back(c.name);
 
-        for (const std::string& n : g_ActionNames)
-            SendMessageW(g_hAction, CB_ADDSTRING, 0, (LPARAM)Widen(n).c_str());
-
-        Log("[list] NPC actions=%zu", g_ActionNames.size());
-    }
+    g_CommittedGroup = gi;
+    g_CommittedItem  = itemIndex;
     UpdateTitle();
+    g_CommitBusy = false;
 }
 
 //----------------------------------------------------------------------
-// アクション選択 → その 0x07 ブロックをタイムラインとして再生
+// Schedule の選択＝即再生（Effect は g_Effect、NPC は g_ActionCtx）
 //----------------------------------------------------------------------
-static void PlaySelectedAction(int actionIndex)
+static void PlaySelectedSchedule(int index)
 {
-    if (actionIndex < 0 || actionIndex >= (int)g_ActionNames.size()) return;
+    if (index < 0 || index >= (int)g_ScheduleNames.size()) return;
     if (!g_Dat.IsLoaded()) return;
 
-    const std::string& nm = g_ActionNames[actionIndex];
+    const std::string& nm = g_ScheduleNames[index];
+    const int gi = (int)SendMessageA(g_hGroup, CB_GETCURSEL, 0, 0);
+    const bool isEffect = (gi >= 0) && g_List.Group((size_t)gi).isEffect;
+
+    if (isEffect)
+    {
+        if (!g_Effect.BuildFromChunk(g_Dat, nm.c_str()))
+        {
+            Log("[schedule] %s : timeline 無し", nm.c_str());
+            return;
+        }
+        g_Effect.BuildTextures(GfxDevice());
+        g_Effect.Reset();
+        g_ActionActive = false;
+        Log("[schedule] effect %s insts=%zu dur=%.3fs", nm.c_str(),
+            g_Effect.Timeline().size(), g_Effect.Duration());
+        return;
+    }
 
     if (!g_ActionCtx.BuildFromChunk(g_Dat, nm.c_str()))
     {
-        Log("[action] %s : timeline 無し", nm.c_str());
+        Log("[schedule] %s : timeline 無し", nm.c_str());
         return;
     }
     g_ActionCtx.Reset();
     g_ActionActive = true;
+    Log("[schedule] npc %s insts=%zu", nm.c_str(), g_ActionCtx.Timeline().size());
+}
 
-    Log("[action] %s insts=%zu dur=%.3fs", nm.c_str(),
-        g_ActionCtx.Timeline().size(), g_ActionCtx.Duration());
+// 描画ループから毎フレーム呼ぶ。選択が 7 コマ静止したら確定する
+static void TickPendingCommit()
+{
+    if (g_PendingItem < 0) return;
+    if (++g_PendingFrames < kCommitDelayFrames) return;
 
-    for (const TimelineInst& in : g_ActionCtx.Timeline())
-        Log("[action]   +0x%03X op=0x%02X delay=%u param=%u name=%s",
-            in.offset, in.op, in.delay, in.param, in.name);
+    const int item = g_PendingItem;
+    g_PendingItem = -1;
+    g_PendingFrames = 0;
+    CommitSelection(item);
 }
 
 //----------------------------------------------------------------------
@@ -691,13 +790,16 @@ static LRESULT CALLBACK PanelProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp)
             return 0;
 
         case IDC_ITEMS:
-            if (HIWORD(wp) == LBN_DBLCLK)
-                LoadListSelection((int)SendMessageA(g_hItems, LB_GETCURSEL, 0, 0));
+            if (HIWORD(wp) == LBN_SELCHANGE || HIWORD(wp) == LBN_DBLCLK)
+            {
+                g_PendingItem = (int)SendMessageA(g_hItems, LB_GETCURSEL, 0, 0);
+                g_PendingFrames = 0;
+            }
             return 0;
 
-        case IDC_ACTION:
-            if (HIWORD(wp) == CBN_SELCHANGE)
-                PlaySelectedAction((int)SendMessageA(g_hAction, CB_GETCURSEL, 0, 0));
+        case IDC_SCHEDULE:
+            if (HIWORD(wp) == LBN_SELCHANGE || HIWORD(wp) == LBN_DBLCLK)
+                PlaySelectedSchedule((int)SendMessageA(g_hSchedule, LB_GETCURSEL, 0, 0));
             return 0;
         }
         return 0;
@@ -1182,6 +1284,8 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
 
         if (!g_Paused && g_Dat.IsLoaded()) g_Effect.Advance(g_Dt);
         if (!g_Paused && g_ActionActive)   g_ActionCtx.Advance(g_Dt);
+
+        TickPendingCommit();
 
         RenderScene();
         UpdateTitle();
