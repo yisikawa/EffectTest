@@ -453,6 +453,23 @@ static void RenderScene(bool present)
             halfW = g_SizeScale * su;
             halfH = g_SizeScale * su;
         }
+        else if (g_SizeMode == 3)
+        {
+            // メートル基準: 0x21 のクワッド範囲（±2 m など）、無ければ 1.0 m
+            if (mi.quadHalf[0] > 0.0f && mi.quadHalf[1] > 0.0f)
+            {
+                halfW = g_SizeScale * mi.quadHalf[0];
+                halfH = g_SizeScale * mi.quadHalf[1];
+                center[0] += right[0] * mi.quadCenter[0] + up[0] * mi.quadCenter[1];
+                center[1] += right[1] * mi.quadCenter[0] + up[1] * mi.quadCenter[1];
+                center[2] += right[2] * mi.quadCenter[0] + up[2] * mi.quadCenter[1];
+            }
+            else
+            {
+                halfW = g_SizeScale * 1.0f;
+                halfH = g_SizeScale * 1.0f;
+            }
+        }
 
         float axisR[3] = { right[0] * halfW, right[1] * halfW, right[2] * halfW };
         float axisU[3] = { up[0] * halfH,    up[1] * halfH,    up[2] * halfH };
@@ -1398,6 +1415,7 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
                 if (!NextToken(p, mode, MAX_PATH)) return 2;
                 if      (_stricmp(mode, "quad")   == 0) g_SizeMode = 1;
                 else if (_stricmp(mode, "square") == 0) g_SizeMode = 2;
+                else if (_stricmp(mode, "meter")  == 0) g_SizeMode = 3;
                 else if (_stricmp(mode, "scale")  == 0) g_SizeMode = 0;
                 else { Log("[shot] unknown size: %s", mode); return 2; }
                 continue;
@@ -1569,7 +1587,7 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
             dat, png, GfxBlendModeName(GfxGetBlendMode()),
             g_Effect.UseTexFrames() ? "0x21" : "full",
             GfxGetColorSwap() ? "bgr" : "rgb",
-            g_SizeMode == 1 ? "quad" : (g_SizeMode == 2 ? "square" : "scale"), frames,
+            g_SizeMode == 1 ? "quad" : (g_SizeMode == 2 ? "square" : (g_SizeMode == 3 ? "meter" : "scale")), frames,
             g_Effect.Instances().size(), g_Effect.Textures().size(), ok ? 1 : 0);
 
         g_Effect.ReleaseTextures();

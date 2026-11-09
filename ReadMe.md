@@ -206,7 +206,8 @@ next < 16 で終端 / pos += next
 |---|---|
 | `+0x00` | ブロック名 |
 | `+0x10` | ID（Fire では全ジェネレータ 1026） |
-| `+0x40..0x7F` | 4x4 行列（既定変換） |
+| `+0x40..0x4F` | 色（RGBA float）。**全 generator で (1,1,1,0)** |
+| `+0x50..0x5F` | 色 2（RGBA float）。**全 generator で (1,1,1,1)**（＝行列ではない） |
 | `+0x76` | フレーム数（`長さ = (n+1)/60` 秒） |
 | `+0x78` | 要素数 − 1 |
 | `+0x79` | フラグ（`==0x10`） |
@@ -362,6 +363,9 @@ AltanaView の `SetRenderState` を静的に走査すると、エフェクト描
   （`--bone` だけなら基準モデル **human**（`0-27-82` → `ROM\27\82.DAT`）を自動使用）
 - インスタンス毎の骨: `--shot --bone-map "0:10,1:20" --motion <name4> "<effect dat>" out.png`
   （骨は **0 始まりの配列番号**。`--bone` と独立で、未指定インスタンスは変換なし）
+- `--size meter` を追加（**メートル基準**）。`0x21` のクワッド範囲（約 2〜4 m）を使い、無ければ 1 m
+  - 実測（`11\18`/180 フレーム）: `quad`=11,158 / `meter`=5,470 / `scale`=9,326 / `square`=4,454
+  - **寸法は `quad` が参照と一致**（暗部 10,204 vs 参照 11,301）
 - 背景色: `--shot --bg RRGGBB "<dat>" out.png`（参照動画は `40F0F0`）
 - 色順（診断用）: `--shot --color bgr|rgb "<dat>" out.png`（既定 `rgb`。PNG 保存の色順は修正済み）
 - 参照動画との比較: `ffmpeg -ss <3.2 + N/60> -i fire2.mp4 -frames:v 1 -vf "crop=620:900:640:90" cmp.png`（`docs/VERIFY-PLAN-Schedule.md` V-15）

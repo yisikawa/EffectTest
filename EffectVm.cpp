@@ -209,6 +209,8 @@ static void Vm2(MotionInstance& mi, float dt, float rootDuration)
         switch (op)
         {
         // op 別アキュムレータ（AltanaView では 0x78+op*4 ＝ pos/scale と重なる）
+        // ※ 引数（arg）を積分する案も試したが、g006 が 200 m 超に飛ぶなど破綻したため
+        //    dest スロット（d）を積分する従来動作を維持する。
         case 0x02:
         case 0x05:
         case 0x08:
