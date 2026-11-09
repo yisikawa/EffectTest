@@ -120,22 +120,34 @@ struct GeneratorBlock
 };
 
 //----------------------------------------------------------------------
+// 粒子 1 個ぶんの状態（AltanaView のサブオブジェクト 1 個に相当）
+//   1 generator = `+0x78 + 1` 個のサブを持つ（stride = 0x108 + count*4）
+//----------------------------------------------------------------------
+struct SubUnit
+{
+    SubObject sub;                                        // VM の出力先（0x108 + N）
+    float     uv[4]         = { 0.0f, 0.0f, 1.0f, 1.0f }; // 0x21 のフレーム矩形
+    int       frameIdx      = 0;                          // 現在のフレーム番号
+    float     quadHalf[2]   = { 0.0f, 0.0f };             // 0x21 クワッドの半幅・半高
+    float     quadCenter[2] = { 0.0f, 0.0f };             // 同・中心オフセット
+};
+
+//----------------------------------------------------------------------
 // 実行中のモーションインスタンス
 //----------------------------------------------------------------------
 struct MotionInstance
 {
     const GeneratorBlock* gen      = nullptr;
     const DatFile*        dat      = nullptr;
-    SubObject             sub;
+    std::vector<SubUnit>  subs;                            // 粒子列（サイズ = gen->count + 1）
     float                 startTime = 0.0f;
     bool                  expired   = false;
     int                   texIndex  = -1;
     ID3D11ShaderResourceView* srv   = nullptr;   // 借用（ローカル 0x20 または base の 0x20）
     int                   spawnOp   = 2;
-    float                 uv[4]     = { 0.0f, 0.0f, 1.0f, 1.0f };   // 0x21 のフレーム矩形
-    int                   frameIdx  = 0;                             // 現在のフレーム番号
-    float                 quadHalf[2] = { 0.0f, 0.0f };               // 0x21 クワッドの半幅・半高
-    float                 quadCenter[2] = { 0.0f, 0.0f };             // 同・中心オフセット
+
+    int SubCount() const { return (int)subs.size(); }
+    SubObject& Sub0() { return subs[0].sub; }
 
     void Reset(const DatFile* d, const GeneratorBlock* g, float start, int tex, int op);
     void Eval(const class EffectContext& ctx, float dt);

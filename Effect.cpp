@@ -81,16 +81,23 @@ void MotionInstance::Reset(const DatFile* d, const GeneratorBlock* g, float star
     texIndex  = tex;
     spawnOp   = op;
 
-    // 0x21 のフレーム矩形（先頭フレームで初期化。実際の適用は Eval が
-    // EffectContext::UseTexFrames() を見て決める）
-    frameIdx = 0;
-    uv[0] = 0.0f; uv[1] = 0.0f; uv[2] = 1.0f; uv[3] = 1.0f;
+    // 粒子数 = ジェネレータの +0x78 + 1（AltanaView の MotionObject.count と同じ）
+    const int n = (g != nullptr) ? (int)g->count + 1 : 1;
+    subs.assign((size_t)((n > 0) ? n : 1), SubUnit{});
 
-    sub.Clear();
-    sub.Elapsed() = 0.0f;
-    sub.T01()     = 0.0f;
-    float* prev = sub.At(SUB_PREV);
-    prev[0] = prev[1] = prev[2] = 0.0f;
+    for (SubUnit& su : subs)
+    {
+        // 0x21 のフレーム矩形（先頭フレームで初期化。実際の適用は Eval が
+        // EffectContext::UseTexFrames() を見て決める）
+        su.frameIdx = 0;
+        su.uv[0] = 0.0f; su.uv[1] = 0.0f; su.uv[2] = 1.0f; su.uv[3] = 1.0f;
+
+        su.sub.Clear();
+        su.sub.Elapsed() = 0.0f;
+        su.sub.T01()     = 0.0f;
+        float* prev = su.sub.At(SUB_PREV);
+        prev[0] = prev[1] = prev[2] = 0.0f;
+    }
 }
 
 //======================================================================
@@ -461,12 +468,15 @@ void EffectContext::Spawn(const char* name4, float startSec, int op)
     else if (m_Base != nullptr && g->linkName[0] != '\0')
         mi.srv = m_Base->FindTexture(g->linkName);
 
-    // 直近の色（op 0x2A）を初期色として与える
-    float* col = mi.sub.Color();
-    col[0] = m_LastColor[0] / 255.0f;
-    col[1] = m_LastColor[1] / 255.0f;
-    col[2] = m_LastColor[2] / 255.0f;
-    col[3] = m_LastColor[3] / 255.0f;
+    // 直近の色（op 0x2A）を初期色として与える（全サブへ）
+    for (SubUnit& su : mi.subs)
+    {
+        float* col = su.sub.Color();
+        col[0] = m_LastColor[0] / 255.0f;
+        col[1] = m_LastColor[1] / 255.0f;
+        col[2] = m_LastColor[2] / 255.0f;
+        col[3] = m_LastColor[3] / 255.0f;
+    }
 
     m_Instances.push_back(mi);
 }

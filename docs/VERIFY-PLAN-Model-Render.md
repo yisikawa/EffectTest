@@ -179,6 +179,20 @@ $ROM='C:\Program Files (x86)\PlayOnline\SquareEnix\FINAL FANTASY XI\ROM'
 - `--size quad` は**帯状の黒塊が出ない**（円形の煙）。非背景 8,986 / 暗部 4,388
 - 帯の原因は `scl.x` の破綻（7.60 / 27.47）。`0x21` の実寸（±2 m など）だけを使う
 
+### V-M14 複数サブ（粒子）
+
+```powershell
+$ROM='C:\Program Files (x86)\PlayOnline\SquareEnix\FINAL FANTASY XI\ROM'
+.\x64\Release\EffectTest.exe --shot --frames 90 "$ROM\11\17.DAT" ms_fire.png
+.\x64\Release\EffectTest.exe --shot --frames 90 "$ROM\11\18.DAT" ms_fire2.png
+.\x64\Release\EffectTest.exe --shot --frames 90 "$ROM\12\43.DAT" ms_bliz.png
+Select-String -Path effecttest_log.txt -Pattern 'subs='
+```
+期待（実測値・2026-11-09）:
+- `11\17` = **8,050 / 348**、`11\18` = **2,694 / 576**（**完全一致**＝サブ数 1 の経路は従来と同一）
+- `12\43` のログに `subs=4`（`g011`/`g010`）が出る。`g006` は `subs=12`
+- `12\43` の非背景は **10,729**（この DAT はサブの位置が同一なので画素数は不変）
+
 ## 3. 失敗時の切り分け
 
 | 症状 | 疑う箇所 | 確認 |

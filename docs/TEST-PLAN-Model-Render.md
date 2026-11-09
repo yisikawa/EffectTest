@@ -49,6 +49,16 @@
 |---|---|---|---|
 | M-10 | `--shot "…\11\17.DAT"` | **8,050 / 348**（V-08 と一致） | △ |
 | M-11 | `--shot "…\11\18.DAT"` | **2,694 / 576** | △ |
+| M-30 | `--shot "…\11\17.DAT"` | **8,050 / 348**（不変） |
+| M-31 | `--shot "…\11\18.DAT"` | **2,694 / 576**（不変） |
+| M-32 | `--shot "…\12\43.DAT"` | ログに `subs=4`（`g011`/`g010`）、`g006` は `subs=12`。非背景 10,729 |
+| M-33 | `--selftest "…\12\43.DAT"` | 各インスタンス行に `subs=N` が出る |
+
+> 実装（2026-11-09）: `MotionInstance` は `std::vector<SubUnit> subs`（サイズ = `gen->count + 1`）。
+> `Eval` はサブごとに VM#1→VM#2→0x21 更新、描画は「インスタンス × サブ」の二重ループ。
+> 計画: `docs/superpowers/plans/2026-11-09-multi-sub.md`
+
+
 | M-12 | `--selftest` 5 DAT | `prog/timeline/spawn/subtl` が V-01〜V-14 と一致 | ○ |
 | M-13 | `--list` | `groups=29` / `items=1266` | ○ |
 

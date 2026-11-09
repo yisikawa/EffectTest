@@ -420,88 +420,13 @@ static void RenderScene(bool present)
     for (int i = 0; i < count; ++i)
     {
         const MotionInstance& mi = insts[i];
-        const float* p = mi.sub.At(SUB_POS);
-        const float* s = mi.sub.At(SUB_SCALE);
-        const float* c = mi.sub.At(SUB_COLOR);
 
-        float center[3] = { p[0], p[1], p[2] };
-
-        // 位置が未設定のエフェクトでも形を確認できるよう横並びに配置
-        if (g_Layout && center[0] == 0.0f && center[1] == 0.0f && center[2] == 0.0f)
-            center[0] = (i - (count - 1) * 0.5f) * 1.6f;
-
-        const float sx  = (s[0] > 0.001f) ? s[0] : 1.0f;
-        const float sy2 = (s[1] > 0.001f) ? s[1] : 1.0f;
-
-        // 0x21 クワッドのローカル範囲（±2 など）を寸法に使う場合（--size quad）
-        float halfW = g_SizeScale * sx;
-        float halfH = g_SizeScale * sy2;
-        if (g_SizeMode == 1 && mi.quadHalf[0] > 0.0f && mi.quadHalf[1] > 0.0f)
-        {
-            // 0x21 のクワッド範囲は既にメートル実寸（例: ±2 → 4 m 角）。
-            // VM のスケール（scl）は現状 X 成分が破綻しているため掛けない。
-            // 倍率を変えたいときは --scale を使う。
-            halfW = g_SizeScale * mi.quadHalf[0];
-            halfH = g_SizeScale * mi.quadHalf[1];
-
-            // クワッド中心のオフセット（ローカル xy）
-            center[0] += right[0] * mi.quadCenter[0] + up[0] * mi.quadCenter[1];
-            center[1] += right[1] * mi.quadCenter[0] + up[1] * mi.quadCenter[1];
-            center[2] += right[2] * mi.quadCenter[0] + up[2] * mi.quadCenter[1];
-        }
-        else if (g_SizeMode == 2)
-        {
-            // 正方形ビルボード（ワイヤーフレーム参照に合わせる）: scale[2] を両軸に使う
-            const float su = (s[2] > 0.001f) ? s[2] : 1.0f;
-            halfW = g_SizeScale * su;
-            halfH = g_SizeScale * su;
-        }
-        else if (g_SizeMode == 3)
-        {
-            // メートル基準: 0x21 のクワッド範囲（±2 m など）、無ければ 1.0 m
-            if (mi.quadHalf[0] > 0.0f && mi.quadHalf[1] > 0.0f)
-            {
-                halfW = g_SizeScale * mi.quadHalf[0];
-                halfH = g_SizeScale * mi.quadHalf[1];
-                center[0] += right[0] * mi.quadCenter[0] + up[0] * mi.quadCenter[1];
-                center[1] += right[1] * mi.quadCenter[0] + up[1] * mi.quadCenter[1];
-                center[2] += right[2] * mi.quadCenter[0] + up[2] * mi.quadCenter[1];
-            }
-            else
-            {
-                halfW = g_SizeScale * 1.0f;
-                halfH = g_SizeScale * 1.0f;
-            }
-        }
-
-        float axisR[3] = { right[0] * halfW, right[1] * halfW, right[2] * halfW };
-        float axisU[3] = { up[0] * halfH,    up[1] * halfH,    up[2] * halfH };
-
-        // 骨格のルート変換（--model / --motion / --bone / --bone-map）
+        // 骨格のルート変換（--model / --motion / --bone / --bone-map）はインスタンス単位
         const float* Mptr = nullptr;
         if (i < (int)g_InstHasBone.size() && g_InstHasBone[i])
             Mptr = &g_InstMats[(size_t)i * 16];
         else if (g_RootActive)
             Mptr = g_Root;
-
-        if (Mptr != nullptr)
-        {
-            const XMMATRIX M = XMLoadFloat4x4(reinterpret_cast<const XMFLOAT4X4*>(Mptr));
-            XMFLOAT3 tmp = {};
-            XMStoreFloat3(&tmp, XMVector3Transform(XMVectorSet(center[0], center[1], center[2], 1.0f), M));
-            center[0] = tmp.x; center[1] = tmp.y; center[2] = tmp.z;
-
-            // ビルボードの軸は回転させない（常にカメラ正対）。
-            // 骨行列は「中心位置」にだけ適用する。軸まで回すと、軸が視線方向に
-            // 倒れたときにクワッドが潰れて帯状になる（実測で発生）。
-        }
-
-        float rgba[4] = { c[0], c[1], c[2], c[3] };
-        if (rgba[0] == 0.0f && rgba[1] == 0.0f && rgba[2] == 0.0f)
-        {
-            rgba[0] = rgba[1] = rgba[2] = 1.0f;      // VM が色を書いていない場合の代替
-        }
-        if (rgba[3] <= 0.0f) rgba[3] = 1.0f;
 
         const int texIdx = g_NoTexture ? -1
                                        : ((mi.texIndex >= 0) ? mi.texIndex : g_TexIndex);
@@ -510,16 +435,97 @@ static void RenderScene(bool present)
         ID3D11ShaderResourceView* srv = g_NoTexture ? nullptr : mi.srv;
         if (!g_NoTexture && srv == nullptr) srv = g_Effect.TextureSrv(texIdx);
 
-        GfxDrawQuad(center, axisR, axisU, rgba, mi.uv, srv);
-
-        if (g_TraceFile != nullptr)
+        // 粒子（サブ）ごとに 1 枚描く（AltanaView の DrawPrimitive(…, subs*2) 相当）
+        for (int k = 0; k < mi.SubCount(); ++k)
         {
-            fprintf(g_TraceFile,
-                    "%u,%d,%s,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.4f,%.4f,%.4f,%.4f\n",
-                    g_Effect.Frame(), i, mi.gen->chunk.name,
-                    mi.sub.Elapsed(), mi.sub.T01(),
-                    p[0], p[1], p[2], s[0], s[1], s[2],
-                    c[0], c[1], c[2], c[3]);
+            const SubUnit& su = mi.subs[(size_t)k];
+            const float* p = su.sub.At(SUB_POS);
+            const float* s = su.sub.At(SUB_SCALE);
+            const float* c = su.sub.At(SUB_COLOR);
+
+            float center[3] = { p[0], p[1], p[2] };
+
+            // 位置が未設定のエフェクトでも形を確認できるよう横並びに配置
+            if (g_Layout && center[0] == 0.0f && center[1] == 0.0f && center[2] == 0.0f)
+                center[0] = (i - (count - 1) * 0.5f) * 1.6f;
+
+            const float sx  = (s[0] > 0.001f) ? s[0] : 1.0f;
+            const float sy2 = (s[1] > 0.001f) ? s[1] : 1.0f;
+
+            // 0x21 クワッドのローカル範囲（±2 など）を寸法に使う場合（--size quad）
+            float halfW = g_SizeScale * sx;
+            float halfH = g_SizeScale * sy2;
+            if (g_SizeMode == 1 && su.quadHalf[0] > 0.0f && su.quadHalf[1] > 0.0f)
+            {
+                // 0x21 のクワッド範囲は既にメートル実寸（例: ±2 → 4 m 角）。
+                // VM のスケール（scl）は現状 X 成分が破綻しているため掛けない。
+                // 倍率を変えたいときは --scale を使う。
+                halfW = g_SizeScale * su.quadHalf[0];
+                halfH = g_SizeScale * su.quadHalf[1];
+
+                // クワッド中心のオフセット（ローカル xy）
+                center[0] += right[0] * su.quadCenter[0] + up[0] * su.quadCenter[1];
+                center[1] += right[1] * su.quadCenter[0] + up[1] * su.quadCenter[1];
+                center[2] += right[2] * su.quadCenter[0] + up[2] * su.quadCenter[1];
+            }
+            else if (g_SizeMode == 2)
+            {
+                // 正方形ビルボード（ワイヤーフレーム参照に合わせる）: scale[2] を両軸に使う
+                const float sz = (s[2] > 0.001f) ? s[2] : 1.0f;
+                halfW = g_SizeScale * sz;
+                halfH = g_SizeScale * sz;
+            }
+            else if (g_SizeMode == 3)
+            {
+                // メートル基準: 0x21 のクワッド範囲（±2 m など）、無ければ 1.0 m
+                if (su.quadHalf[0] > 0.0f && su.quadHalf[1] > 0.0f)
+                {
+                    halfW = g_SizeScale * su.quadHalf[0];
+                    halfH = g_SizeScale * su.quadHalf[1];
+                    center[0] += right[0] * su.quadCenter[0] + up[0] * su.quadCenter[1];
+                    center[1] += right[1] * su.quadCenter[0] + up[1] * su.quadCenter[1];
+                    center[2] += right[2] * su.quadCenter[0] + up[2] * su.quadCenter[1];
+                }
+                else
+                {
+                    halfW = g_SizeScale * 1.0f;
+                    halfH = g_SizeScale * 1.0f;
+                }
+            }
+
+            float axisR[3] = { right[0] * halfW, right[1] * halfW, right[2] * halfW };
+            float axisU[3] = { up[0] * halfH,    up[1] * halfH,    up[2] * halfH };
+
+            if (Mptr != nullptr)
+            {
+                const XMMATRIX M = XMLoadFloat4x4(reinterpret_cast<const XMFLOAT4X4*>(Mptr));
+                XMFLOAT3 tmp = {};
+                XMStoreFloat3(&tmp, XMVector3Transform(XMVectorSet(center[0], center[1], center[2], 1.0f), M));
+                center[0] = tmp.x; center[1] = tmp.y; center[2] = tmp.z;
+
+                // ビルボードの軸は回転させない（常にカメラ正対）。
+                // 骨行列は「中心位置」にだけ適用する。軸まで回すと、軸が視線方向に
+                // 倒れたときにクワッドが潰れて帯状になる（実測で発生）。
+            }
+
+            float rgba[4] = { c[0], c[1], c[2], c[3] };
+            if (rgba[0] == 0.0f && rgba[1] == 0.0f && rgba[2] == 0.0f)
+            {
+                rgba[0] = rgba[1] = rgba[2] = 1.0f;      // VM が色を書いていない場合の代替
+            }
+            if (rgba[3] <= 0.0f) rgba[3] = 1.0f;
+
+            GfxDrawQuad(center, axisR, axisU, rgba, su.uv, srv);
+
+            if (g_TraceFile != nullptr)
+            {
+                fprintf(g_TraceFile,
+                        "%u,%d,%d,%s,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.4f,%.4f,%.4f,%.4f\n",
+                        g_Effect.Frame(), i, k, mi.gen->chunk.name,
+                        su.sub.Elapsed(), su.sub.T01(),
+                        p[0], p[1], p[2], s[0], s[1], s[2],
+                        c[0], c[1], c[2], c[3]);
+            }
         }
     }
 
@@ -1097,15 +1103,16 @@ static int RunSelfTest(const char* path)
                     f, eff.Ip(), eff.Timeline().size(), eff.Instances().size());
             for (const MotionInstance& mi : eff.Instances())
             {
-                const float* p = mi.sub.At(SUB_POS);
-                const float* s = mi.sub.At(SUB_SCALE);
-                const float* c = mi.sub.At(SUB_COLOR);
+                const SubUnit& su = mi.subs[0];
+                const float* p = su.sub.At(SUB_POS);
+                const float* s = su.sub.At(SUB_SCALE);
+                const float* c = su.sub.At(SUB_COLOR);
                 fprintf(fp,
-                        " | %s t=%.3f/%.3f pos=(%.3f,%.3f,%.3f) scl=(%.3f,%.3f,%.3f) col=(%.2f,%.2f,%.2f,%.2f) tex=%d link=%s uv=(%.3f,%.3f,%.3f,%.3f)",
-                        mi.gen->chunk.name, mi.sub.Elapsed(), mi.gen->Length(),
+                        " | %s subs=%d t=%.3f/%.3f pos=(%.3f,%.3f,%.3f) scl=(%.3f,%.3f,%.3f) col=(%.2f,%.2f,%.2f,%.2f) tex=%d link=%s uv=(%.3f,%.3f,%.3f,%.3f)",
+                        mi.gen->chunk.name, mi.SubCount(), su.sub.Elapsed(), mi.gen->Length(),
                         p[0], p[1], p[2], s[0], s[1], s[2], c[0], c[1], c[2], c[3],
                         mi.texIndex, mi.gen->linkName,
-                        mi.uv[0], mi.uv[1], mi.uv[2], mi.uv[3]);
+                        su.uv[0], su.uv[1], su.uv[2], su.uv[3]);
             }
             fprintf(fp, "\n");
         }
@@ -1579,13 +1586,14 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
 
         for (const MotionInstance& mi : g_Effect.Instances())
         {
-            const float* pp = mi.sub.At(SUB_POS);
-            const float* ss = mi.sub.At(SUB_SCALE);
-            const float* cc = mi.sub.At(SUB_COLOR);
-            Log("[shot] inst %s pos=(%.2f,%.2f,%.2f) scl=(%.2f,%.2f,%.2f) col=(%.2f,%.2f,%.2f,%.2f) tex=%d link=%s uv=(%.3f,%.3f,%.3f,%.3f) frm=%d/%zu srv=%p",
-                mi.gen->chunk.name, pp[0], pp[1], pp[2], ss[0], ss[1], ss[2],
+            const SubUnit& su = mi.subs[0];
+            const float* pp = su.sub.At(SUB_POS);
+            const float* ss = su.sub.At(SUB_SCALE);
+            const float* cc = su.sub.At(SUB_COLOR);
+            Log("[shot] inst %s subs=%d pos=(%.2f,%.2f,%.2f) scl=(%.2f,%.2f,%.2f) col=(%.2f,%.2f,%.2f,%.2f) tex=%d link=%s uv=(%.3f,%.3f,%.3f,%.3f) frm=%d/%zu srv=%p",
+                mi.gen->chunk.name, mi.SubCount(), pp[0], pp[1], pp[2], ss[0], ss[1], ss[2],
                 cc[0], cc[1], cc[2], cc[3], mi.texIndex, mi.gen->linkName,
-                mi.uv[0], mi.uv[1], mi.uv[2], mi.uv[3], mi.frameIdx, mi.gen->texFrames.size(), (void*)mi.srv);
+                su.uv[0], su.uv[1], su.uv[2], su.uv[3], su.frameIdx, mi.gen->texFrames.size(), (void*)mi.srv);
         }
 
         RenderScene(false);                     // Present せずに描画
