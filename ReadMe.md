@@ -357,6 +357,7 @@ AltanaView の `SetRenderState` を静的に走査すると、エフェクト描
 - GUI: `M` キーで巡回。現在のモードはタイトルとログ `[blend] <mode>` に出ます
 - ヘッドレス: `--shot --blend alpha|add|alpha_add "<dat>" out.png`（`[shot] … blend=<mode>` を出力）
 - テクスチャフレーム: `--shot --uv 0x21|full "<dat>" out.png`（既定 `uvmode=0x21`。`full` で全面サンプリングに戻る）
+- フレーム選択: `--shot --uvframe random|time "<dat>" out.png`（既定 `random`＝AltanaView 準拠。`time` は経過時間で進める）
 - 時刻指定: `--shot --frames N "<dat>" out.png`（既定 90 = 1.5 s。1 フレーム = 1/60 s）
 - 骨格（GPU 不要）: `--skel "<model dat>" [motion4]`（骨数・モーション一覧・姿勢の変化をログ）
 - 骨をエフェクトのルートに: `--shot --model human --motion <name4> --bone N "<effect dat>" out.png`

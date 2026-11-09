@@ -273,9 +273,19 @@ void MotionInstance::Eval(const EffectContext& ctx, float dt)
     if (gen->HasFrames() && ctx.UseTexFrames())
     {
         const int n = (int)gen->texFrames.size();
-        int idx = (int)(sub.Elapsed() * 60.0f);
-        if (idx < 0) idx = 0;
-        idx %= n;
+        int idx;
+        if (ctx.RandomFrame())
+        {
+            // AltanaView: 描画ごとに 0x21 のフレームを乱数で 1 枚選ぶ（FUN_0040c4e0）
+            idx = (int)(Rand01() * (float)n);
+            if (idx >= n) idx = n - 1;
+        }
+        else
+        {
+            idx = (int)(sub.Elapsed() * 60.0f);
+            if (idx < 0) idx = 0;
+            idx %= n;
+        }
 
         frameIdx = idx;
         const TexFrame& f = gen->texFrames[idx];

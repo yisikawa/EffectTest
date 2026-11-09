@@ -171,6 +171,10 @@ public:
     void SetUseTexFrames(bool on) { m_UseTexFrames = on; }
     bool UseTexFrames() const { return m_UseTexFrames; }
 
+    // 0x21 フレームの選び方（AltanaView は毎描画で乱数 1 枚 → 既定 random）
+    void SetRandomFrame(bool on) { m_RandomFrame = on; }
+    bool RandomFrame() const { return m_RandomFrame; }
+
     // ビルボード寸法に 0x21 クワッドの範囲を使う（--size quad）
     void SetQuadSize(bool on) { m_QuadSize = on; }
     bool QuadSize() const { return m_QuadSize; }
@@ -232,6 +236,7 @@ private:
     float    m_Speed    = 1.0f;
     uint8_t  m_LastColor[4] = { 255, 255, 255, 255 };
     bool     m_UseTexFrames = true;     // 0x21 の UV 適用（--uv full で無効化）
+    bool     m_RandomFrame  = true;     // 0x21 のフレームを乱数選択（AltanaView 準拠。--uvframe time で経時）
     bool     m_QuadSize     = false;    // 0x21 クワッド寸法で描く（--size quad）
 
     TimTexture m_WhiteTex;

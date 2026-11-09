@@ -72,3 +72,6 @@ effecttest_trace.csv
 # ---- 一時 ----
 *.tmp
 Thumbs.db
+/uf_random.png
+/uf_time.png
+/sheet3.png

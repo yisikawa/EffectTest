@@ -1452,6 +1452,16 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
                 continue;
             }
 
+            if (_stricmp(tok, "--uvframe") == 0)
+            {
+                char mode[MAX_PATH] = {};
+                if (!NextToken(p, mode, MAX_PATH)) return 2;
+                if      (_stricmp(mode, "random") == 0) g_Effect.SetRandomFrame(true);
+                else if (_stricmp(mode, "time")   == 0) g_Effect.SetRandomFrame(false);
+                else { Log("[shot] unknown uvframe: %s", mode); return 2; }
+                continue;
+            }
+
             if (dat[0] == 0) strncpy_s(dat, tok, _TRUNCATE);
             else             strncpy_s(png, tok, _TRUNCATE);
         }
