@@ -180,6 +180,7 @@ void EffectContext::Reset()
     m_Frame    = 0;
     m_Finished = false;
     m_Instances.clear();
+    m_Subs.clear();
 }
 
 void EffectContext::Advance(float dt)
@@ -204,6 +205,26 @@ void EffectContext::Advance(float dt)
         ExecInst(in);
         m_TimeLeft += in.delay / 60.0f;      // ★命令の delay を加算
         ++m_Ip;
+    }
+
+    //--------------------------------------------------------------
+    // 1b) 入れ子 Schedule（op 0x03 で起動された別の 0x07）
+    //--------------------------------------------------------------
+    for (SubTimeline& s : m_Subs)
+    {
+        s.timeLeft -= sdt;
+        int guard2 = 0;
+        while (s.timeLeft < 0.0f && guard2++ < 1024)
+        {
+            if (s.ip >= s.insts.size()) break;
+
+            const TimelineInst in = s.insts[s.ip];
+            if (in.op == 0x00) break;
+
+            ExecSub(s, in);
+            s.timeLeft += in.delay / 60.0f;
+            ++s.ip;
+        }
     }
 
     //--------------------------------------------------------------
@@ -235,8 +256,12 @@ void EffectContext::ExecInst(const TimelineInst& in)
     switch (in.op)
     {
     case 0x02:      // モーション生成
-    case 0x03:      // 別種生成（本ビューアでは同じ経路で生成）
         Spawn(in.name, in.param / 60.0f, (int)in.op);
+        break;
+
+    case 0x03:      // 別種生成: 0x07（別 Schedule）なら入れ子で実行、0x05 なら従来どおり生成
+        if (!StartSubTimeline(in.name))
+            Spawn(in.name, in.param / 60.0f, (int)in.op);
         break;
 
     case 0x2A:      // 色（inline RGBA）
@@ -249,6 +274,82 @@ void EffectContext::ExecInst(const TimelineInst& in)
 
     default:
         break;      // 0x05(モデル生成) / 0x18 / 0x25 / サウンド系は未実装
+    }
+}
+
+// 0x07 チャンクの命令列（+0x50 起点）を読み出す
+bool EffectContext::ParseTimeline(const DatChunk& c, std::vector<TimelineInst>* out) const
+{
+    if (m_Dat == nullptr || out == nullptr) return false;
+    out->clear();
+    if (c.size <= 0x50) return false;
+
+    const uint32_t start = c.offset + 0x50;
+    const uint32_t end   = c.End();
+    uint32_t pos = start;
+    while (pos + 8 <= end)
+    {
+        const uint8_t* p = m_Dat->At(pos);
+        if (p == nullptr) break;
+
+        TimelineInst in = {};
+        in.op  = p[0];
+        in.len = p[1] & 0x1F;
+        if (in.len == 0) break;
+
+        memcpy(&in.delay, p + 4, 2);
+        memcpy(&in.param, p + 6, 2);
+        memcpy(in.name,   p + 8, 4);
+        in.name[4] = '\0';
+        memcpy(in.rgba,   p + 8, 4);
+        in.extra  = (pos + 0x1E < end) ? p[0x1E] : 0;
+        in.offset = pos - c.offset;
+
+        out->push_back(in);
+        if (in.op == 0x00) break;
+        pos += (uint32_t)in.len * 4;
+    }
+    return !out->empty();
+}
+
+// op 0x03 の名前が 0x07（別 Schedule）を指すとき、その命令列を入れ子で起動する
+bool EffectContext::StartSubTimeline(const char* name4)
+{
+    if (m_Dat == nullptr || name4 == nullptr) return false;
+    if (m_Subs.size() >= 16) return false;                       // 暴走防止
+
+    for (const SubTimeline& s : m_Subs)
+        if (memcmp(s.name.c_str(), name4, 4) == 0) return true;   // 起動済み
+
+    const DatChunk* c = m_Dat->Find(name4, 0x07);
+    if (c == nullptr) return false;
+
+    SubTimeline s;
+    s.name.assign(name4, 4);
+    if (!ParseTimeline(*c, &s.insts)) return false;
+
+    m_Subs.push_back(std::move(s));
+    return true;
+}
+
+void EffectContext::ExecSub(SubTimeline& s, const TimelineInst& in)
+{
+    switch (in.op)
+    {
+    case 0x02:
+        Spawn(in.name, in.param / 60.0f, (int)in.op);
+        break;
+
+    case 0x2A:
+        for (int i = 0; i < 4; ++i) m_LastColor[i] = in.rgba[i];
+        break;
+
+    case 0x3D:      // '=' ブロック → '>' までスキップ（入れ子側の ip を進める）
+        while (s.ip < s.insts.size() && s.insts[s.ip].op != 0x3E) ++s.ip;
+        break;
+
+    default:
+        break;
     }
 }
 

@@ -161,12 +161,27 @@ public:
     const GeneratorBlock* FindGenerator(const char* name4) const;
     int FindTextureIndex(const char* name4) const;   // +0xAC のリンク名 → 0x20 の番号（無ければ -1）
     void SetBaseTexture(const class EffectBase* base) { m_Base = base; }  // base の 0x20 を借用する
+    size_t SubTimelineCount() const { return m_Subs.size(); }
     ID3D11ShaderResourceView* TextureSrv(int index) const;
 
 private:
+    // 入れ子 Schedule（op 0x03 が別の 0x07 を指す場合）の実行状態
+    struct SubTimeline
+    {
+        std::string               name;
+        std::vector<TimelineInst> insts;
+        size_t                    ip = 0;
+        float                     timeLeft = 0.0f;
+    };
+
     void ExecInst(const TimelineInst& in);
+    void ExecSub(SubTimeline& s, const TimelineInst& in);
+    bool StartSubTimeline(const char* name4);
+    bool ParseTimeline(const DatChunk& c, std::vector<TimelineInst>* out) const;
     void Spawn(const char* name4, float startSec, int op);
     bool BuildInternal(const DatFile& dat, const char* mainChunkName);
+
+    std::vector<SubTimeline>    m_Subs;
 
     const DatFile*              m_Dat = nullptr;
     const class EffectBase*     m_Base = nullptr;   // base（ROM\0\0.DAT）のテクスチャ借用元

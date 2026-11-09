@@ -1009,6 +1009,8 @@ static int RunSelfTest(const char* path)
         }
     }
 
+    fprintf(fp, "\nsubtl    = %zu\n", eff.SubTimelineCount());
+
     fclose(fp);
     return 0;
 }
