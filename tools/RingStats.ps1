@@ -22,7 +22,15 @@
 param(
     [Parameter(Mandatory = $true)][string]$Path,
     [int]$Step = 2,
-    [int]$Tolerance = 3
+    [int]$Tolerance = 3,
+    # 解析対象の矩形（参照動画の 3D ビューだけを見るときなど）。0 は全体
+    [int]$Left = 0,
+    [int]$Top = 0,
+    [int]$Width = 0,
+    [int]$Height = 0,
+    # 背景色を取る画素（-1 は解析矩形の左上）
+    [int]$BgX = -1,
+    [int]$BgY = -1
 )
 
 Add-Type -AssemblyName System.Drawing
@@ -34,13 +42,20 @@ try
 {
     $W = $bmp.Width
     $H = $bmp.Height
-    $bg = $bmp.GetPixel(0, 0)
+    $rx0 = [Math]::Max(0, $Left)
+    $ry0 = [Math]::Max(0, $Top)
+    $rx1 = if ($Width  -gt 0) { [Math]::Min($W, $rx0 + $Width)  } else { $W }
+    $ry1 = if ($Height -gt 0) { [Math]::Min($H, $ry0 + $Height) } else { $H }
+    # 背景色（UI を避けた位置を指定できる）
+    $bx = if ($BgX -ge 0) { $BgX } else { $rx0 }
+    $by = if ($BgY -ge 0) { $BgY } else { $ry0 }
+    $bg = $bmp.GetPixel($bx, $by)
 
     # --- 外接矩形 ---
-    $minX = $W; $maxX = -1; $minY = $H; $maxY = -1; $count = 0
-    for ($y = 0; $y -lt $H; $y += $Step)
+    $minX = $rx1; $maxX = -1; $minY = $ry1; $maxY = -1; $count = 0
+    for ($y = $ry0; $y -lt $ry1; $y += $Step)
     {
-        for ($x = 0; $x -lt $W; $x += $Step)
+        for ($x = $rx0; $x -lt $rx1; $x += $Step)
         {
             $c = $bmp.GetPixel($x, $y)
             $d = [Math]::Abs($c.R - $bg.R) + [Math]::Abs($c.G - $bg.G) + [Math]::Abs($c.B - $bg.B)
@@ -67,12 +82,12 @@ try
 
     # --- 中央帯 vs 外周帯の輝度（リング判定）---
     #   bbox の高さ方向は中央 60% の行だけを使う（上下端は形状が崩れやすい）
-    $y0 = [int]($minY + $bh * 0.2)
-    $y1 = [int]($minY + $bh * 0.8)
+    $by0 = [int]($minY + $bh * 0.2)
+    $by1 = [int]($minY + $bh * 0.8)
     $cx = ($minX + $maxX) / 2.0
 
     $sumIn = 0.0; $nIn = 0; $sumOut = 0.0; $nOut = 0
-    for ($y = $y0; $y -le $y1; $y += $Step)
+    for ($y = $by0; $y -le $by1; $y += $Step)
     {
         for ($x = $minX; $x -le $maxX; $x += $Step)
         {
@@ -98,7 +113,7 @@ try
     }
     $peak = [Math]::Round($bestD, 3)
 
-    $rows = [int](($y1 - $y0) / $Step) + 1
+    $rows = [int](($by1 - $by0) / $Step) + 1
     "path=$Path bbox=${bw}x${bh} aspect=$aspect fill=$fill hollow=$hollow peak=$peak rows=$rows"
 }
 finally

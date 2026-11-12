@@ -280,22 +280,48 @@ static void Vm1(const MotionInstance& mi, SubUnit& su, const EffectContext& ctx)
             break;
         }
 
-        //--- 円運動（実測: 引数 11 個のうち先頭 2 個が楕円半径。
-        //      例 11\17 g002 = (0.2, 0.2, 1, 1, 1, 0, 0, -0.8, 1.5, 0, 0)）
-        //   VM#1 は生成時に 1 回だけ走るので、ここでは「円周上の初期位置」を与える。
-        //   残りの引数（arg7 の負値 -0.4..-0.8、arg8 の 0.8..1.5）は未確定。
+        //--- 円運動（実測 FUN_0040e650 case 0x1F。2026-11-12 逆コンパイルで確定）
+        //   引数（arg0..arg10、11 個）:
+        //     arg1       : 位相の基底（rand × dest 値 × 1/65536 + arg1）
+        //     arg2..4    : 方向ベクトル（回転対象）
+        //     arg5, arg6 : 行列の静的回転角（thunk_0042ed05 / 0x42ec62 = D3D 回転）
+        //     arg7 ± arg8: 2 番目の角度（乱数レンジ）
+        //     arg9       : 1 のとき条件付きで 2 回適用
+        //     arg10      : >0 のとき方位を「粒子番号で均等」に割る（全周に散らす）
+        //   → 粒子を**円錐状に散布**する（円周上に等間隔で並べる op ではない）
         case 0x1F:
         {
-            if (g_Ring)
-            {
-                // arg7 は -0.4..-0.8（全 generator で一定）で、半径の候補。
-                //   --ringradius dist でこちらを使う（既定は arg0/arg1）。
-                const float d = (InstLen(p) >= 8) ? fabsf(arg[7]) : 0.0f;
-                if (g_RingDist && d > 1e-6f)
-                    PlaceOnRing(su.sub, d, d, mi.emitSpawned);
-                else
-                    PlaceOnRing(su.sub, arg[0], arg[1], mi.emitSpawned);
-            }
+            if (!g_Ring) break;                     // --arrange line では旧挙動（no-op）
+
+            const float vx0 = arg[2], vy0 = arg[3], vz0 = arg[4];
+            if (fabsf(vx0) + fabsf(vy0) + fabsf(vz0) < 1e-6f) break;
+
+            // 位相（dest 値はスカラー倍率）
+            const float phase = (d != nullptr) ? (d[0] * (1.0f / 65536.0f)) : 0.0f;
+
+            // 2 番目の角度: [arg7-arg8, arg7+arg8]
+            const float theta = arg[7] + arg[8] * (Rand01() * 2.0f - 1.0f);
+
+            // 方位: arg10 > 0 なら粒子番号で均等、そうでなければ乱数
+            float phi;
+            if (arg[9] > 0.5f && mi.emitTotal > 1)
+                phi = 6.283185307179586f * (float)(mi.emitSpawned % mi.emitTotal) / (float)mi.emitTotal;
+            else
+                phi = Rand01() * 6.283185307179586f;
+            phi += phase;
+
+            // Y 回転 → X 回転（thunk の順序に合わせる。要実測確認）
+            const float cp = cosf(phi), sp2 = sinf(phi);
+            const float rx =  vx0 * cp + vz0 * sp2;
+            const float rz = -vx0 * sp2 + vz0 * cp;
+            const float ct = cosf(theta), st = sinf(theta);
+            const float ry =  vy0 * ct - rz * st;
+            const float rz2 = vy0 * st + rz * ct;
+
+            float* pp = su.sub.Pos();
+            pp[0] += rx;
+            pp[1] += ry;
+            pp[2] += rz2;
             break;
         }
 
