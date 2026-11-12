@@ -41,9 +41,9 @@ D:\projects\EffectTest\
 EffectTest.exe "C:\Program Files (x86)\PlayOnline\SquareEnix\FINAL FANTASY XI\ROM\11\17.DAT"
 ```
 
-> **起動時は何も表示しません**（背景のみ）。
-> 表示のトリガーは **List パネルの項目の単一選択（クリック）** です（ダブルクリックも同じ）。
-> 起動時に自動で何か表示したい場合だけ `EffectTest.exe --auto` を使ってください。
+> **起動直後は描画しません**（背景のみ）。引数なしの起動では `ROM\11\17.DAT`（Fire）を
+> 読み込んでタイムラインだけ進めますが、**表示のトリガーは List パネルの項目の単一選択（クリック）** です
+> （ダブルクリックも同じ）。起動時に自動で表示したい場合だけ `EffectTest.exe --auto` を使います。
 
 - 引数なしで起動 → `O` キーでファイル選択、または DAT をウィンドウへ**ドラッグ＆ドロップ**
 - エフェクト DAT の例: `ROM\11\17.DAT`（Fire）, `ROM\11\18.DAT`（Fire II）,
@@ -138,6 +138,11 @@ EffectTest.exe --selftest "<DAT>"              # Effect としてのタイムラ
 ```
 
 - `--selftest` は **`prog=0x50`**（命令列の開始位置）と、各インスタンス行の **`tex=`**（`+0xAC` から解決した `0x20` の番号）・**`link=`**（`+0xAC` の 4 文字名）・**`uv=(u0,v0,u1,v1)`** を出力します。generator 行には **`frm=N`**（同名 `0x21` のフレーム数。無ければ `frm=0(none)`）が出ます。`tex=-1` は `0x1F`/`0x21`/`0x3D` を指す generator では正常（白）。**base（`ROM\0\0.DAT`）の `0x20` は `--shot` で `srv=` が非 0 になることで確認**できます。
+- 2026-11-12 追加の観測点:
+  - **`keys      = N ops, N resolved, M unresolved`** — VM#1 のキー op の第 3 dword を `0x19` チャンク名として解決した率。**`unresolved=0` が正常**（`11\17`=8, `11\18`=9, `12\43`=10, `11\22`=33）。
+  - **`texnames  = N texspecific = N`** — `0x20` の数と specific 名の数。**一致が正常**。
+  - **`rebuild   = ok (...)`** — 同一 `EffectContext` で 2 回 `Build` しても索引が累積しないこと。
+  - **`missing   = N generator(s) unresolved`** — タイムラインが参照した generator 名のうち解決できなかった数（`[spawn] generator not found: …` をログにも出す）。
 - 出力ファイルは**上書き**ですが、実行直後の読み取りは競合することがあるため、`Start-Sleep -Milliseconds 300` を挟むか `file      = ...` 行で対象 DAT を確認してください。
 - 必要資源（generator / texture / base）はアプリ非依存の `tools\EffectRes.ps1` で算出できます（`[res] SUMMARY ...`）。
 - **入れ子 Schedule**: `op 0x03` の名前が `0x07` を指す場合、その Schedule を並行実行します（`--selftest` の **`subtl    = N`**）。例: `12\43` の `main` は `hit1` を起動（`subtl = 1`）。
@@ -178,7 +183,7 @@ EffectTest.exe --selftest "<DAT>"              # Effect としてのタイムラ
 | `FUN_0040e600` | サブオブジェクト一括更新 | `Advance()` 内のインスタンスループ |
 | `FUN_0040e650` | **VM#1**（目標値評価） | `Vm1()`（EffectVm.cpp） |
 | `FUN_0040f4b0` | **VM#2**（時間積分） | `Vm2()`（EffectVm.cpp） |
-| `FUN_0040f820` | キーフレーム線形補間 | 未実装（op 0x4F はテーブル直接参照で代替） |
+| `FUN_0040f820` | キーフレーム線形補間 | `EvalKeyTrack()`（`0x19` チャンク名 → `+0x18` の `[time,value]`） |
 | `D3D` 描画部 | ビルボード / `SRCALPHA`+`ONE` 合成（`ALPHABLENDENABLE=1`, `ZWRITEENABLE=0`） | `Gfx::GfxDrawQuad()`（D3D9 → D3D11 で代替。既定 `alpha_add`） |
 | `CData::LoadTextureFromFile` (ModelTest) | TIM デコード | `CreateTimTexture()` |
 
@@ -262,17 +267,22 @@ next < 16 で終端 / pos += next
 - VM#1 の主要 op（0x02/0x09/0x0B/0x0F/0x12/0x16/0x0A/0x10/0x11/0x45/0x47/0x49/0x4F/0x67）
   - `0x0F` = **Scale 設定**、`0x0A` = **対称乱数**、`0x03/0x0C/0x13` = **dest への対称乱数**、
     `0x67` = **`pos = -dest × 総時間 × 60`**（いずれも AltanaView 実測に合わせて修正）
-  - `0x06`（球面ランダム）は構造のみ判明・定数未確定のため**未実装**
-    （試作時の実測: `11\17` 3,625 → 4,628。`docs/ANALYSIS-AltanaView-Draw.md` §10.6c）
+  - `0x06`（球面ランダム）は逆アセンブルで定数を確定して**実装済み**
+    （`0x452C68` = π/65536, `0x452C70` = 2π/65536, `0x452C60` = π/2。
+    `docs/ANALYSIS-AltanaView-Draw.md` §10.6c）
 - VM#2 の時間積分・ループ折返し・op 別アキュムレータのエイリアシング
+- **キーフレーム補間**（VM#2 `0x0F..0x21`）。表は VM#1 のキー op が設定する
+  **`0x19` チャンク名**（`"k006"` 等）で、`Find(name, 0x19)` → `+0x18` から
+  `[time, value]` を読む（2026-11-12 にオフセット誤解を修正）
 - サブオブジェクトのバイト配置（`0x108 + dest*4`）
 
 ### 近似 / 未実装（意図的に明示）
 | 項目 | 状況 |
 |---|---|
 | VM#1 `0x03/0x08/0x0C/0x41`（回転・補間系） | `0x03/0x0C/0x13` は AltanaView 実測どおり `dest += rand(-arg,+arg)` に修正済み。`0x08/0x41` は近似（`dest += arg`） |
-| VM#2 `0x0F..0x21`, `0x25`, `0x27/0x28`, `0x2C`, `0x33/0x34-0x37/0x46` | 未実装（IP 前進のみ or 部分実装） |
-| `FUN_0040f820` キーフレーム補間 | 未実装（`0x4F` はテーブル直読みで代替） |
+| VM#2 `0x0F..0x21` | **実装済み**（キー表は `0x19` 名で解決。未解決時はスロットを書かない） |
+| VM#2 `0x25`, `0x33/0x34-0x37/0x46`, `0x5F`, `0x29` | 未実装（IP 前進のみ） |
+| VM#2 `0x27/0x28`（UV オフセット） | 実装済み（`--uvscroll on\|cell` で描画に適用。既定 off） |
 | `0x1F`（`f101.m`）ジオメトリ | **実 3D 平行四辺形で描画**（`--geo on`。既定は off）。§下記参照 |
 | `0x19` / `0x3D` ブロック | 未使用（チャンク索引には載る） |
 | `0x21`（テクスチャフレーム） | パース済み・既定で UV 適用（`frm=` / `uv=`。`--uv full` で無効化） |
@@ -310,8 +320,8 @@ next < 16 で終端 / pos += next
    - `FUN_0040e0b0`（放出ループ）/ `FUN_00410090`（粒子再初期化）の移植
    - 設計は `docs/ANALYSIS-AltanaView-Draw.md` §10.10（フィールド表つき）
 2. `0x1F` の残課題（`+0x14` の意味、UV 正規化、`y` 異常値）と `--geo` 既定化の判断
-2. VM の未実装 op（特に `0x25` と `0x0F..0x21` の角度補間）の確定 → 回転・フェードの再現
-3. `0x19` キーフレーム表（`FUN_0040f820`）の実装 → 滑らかな補間
+2. VM の未実装 op（`0x25` / `0x5F` / `0x29`）の確定 → 回転・フェードの再現
+3. `0x19` キーフレーム表の外挿規則（先頭キーが 0 より後・末尾 `(0,0)`）の確定
 4. `res/`（2026 版リポジトリ同梱）の設定ファイル読込 → エフェクト毎の調整値
 5. 複数エフェクトの一覧ブラウズ（`List\Effect\*.csv` 連動）
 
@@ -389,6 +399,9 @@ AltanaView の `SetRenderState` を静的に走査すると、エフェクト描
 - ブレンド自動: `--shot --blend auto "<dat>" out.png`（テクスチャの黒割合 > 0.5 で `add`、他は `alpha`）
 - UV スクロール: `--shot --uvscroll off|on|cell "<dat>" out.png`
   （`on` = 累積値を 0..1 巡回、`cell` = 1 セル幅で巡回。既定 `off`＝ゴールデン維持）
+  - 2026-11-12 修正: `g_UvScroll` が `bool` だったため `cell`(=2) が `on`(=1) に化けていた（C4305）。`int` 化して解消
+- 色/α の代替: `--shot --colorfallback on|off "<dat>" out.png`
+  （`on` = RGB 全 0 → 白 / α≤0 → 1 の代替を適用（既定・従来挙動）。`off` = 代替せず VM の値をそのまま使う。A/B 用）
 - トレース: `--shot --trace "<dat>" out.png` → `effecttest_trace.csv`（列: `frame,instance,sub,name,elapsed,t01,px,py,pz,sx,sy,sz,r,g,b,a`。**サブ（粒子）単位**）
 - 時刻指定: `--shot --frames N "<dat>" out.png`（既定 90 = 1.5 s。1 フレーム = 1/60 s）
 - 骨格（GPU 不要）: `--skel "<model dat>" [motion4]`（骨数・モーション一覧・姿勢の変化をログ）
