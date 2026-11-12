@@ -1782,6 +1782,41 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
                 continue;
             }
 
+            // 配置の形: line（旧）/ ring（円周に均等）/ spiral（らせん）
+            if (_stricmp(tok, "--arrange") == 0)
+            {
+                char mode[MAX_PATH] = {};
+                if (!NextToken(p, mode, MAX_PATH)) return 2;
+                if      (_stricmp(mode, "line")   == 0) EffectSetArrange(0);
+                else if (_stricmp(mode, "ring")   == 0) EffectSetArrange(1);
+                else if (_stricmp(mode, "spiral") == 0) EffectSetArrange(2);
+                else { Log("[shot] unknown arrange: %s", mode); return 2; }
+                Log("[shot] arrange=%s", mode);
+                continue;
+            }
+
+            // 円周を張る面: xy（既定）/ xz / yz
+            if (_stricmp(tok, "--ringplane") == 0)
+            {
+                char mode[MAX_PATH] = {};
+                if (!NextToken(p, mode, MAX_PATH)) return 2;
+                if      (_stricmp(mode, "xy") == 0) EffectSetRingPlane(0);
+                else if (_stricmp(mode, "xz") == 0) EffectSetRingPlane(1);
+                else if (_stricmp(mode, "yz") == 0) EffectSetRingPlane(2);
+                else { Log("[shot] unknown ringplane: %s", mode); return 2; }
+                continue;
+            }
+
+            // らせんの巻き数
+            if (_stricmp(tok, "--spiralturns") == 0)
+            {
+                char num[MAX_PATH] = {};
+                if (!NextToken(p, num, MAX_PATH)) return 2;
+                const double f = atof(num);
+                if (f > 0.0) EffectSetSpiralTurns((float)f);
+                continue;
+            }
+
             // 円周半径の倍率（データの 0.1..0.5 m はビルボードより小さいため、確認用）
             if (_stricmp(tok, "--ringscale") == 0)
             {

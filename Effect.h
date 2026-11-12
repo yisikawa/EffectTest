@@ -229,6 +229,12 @@ void EffectSetRingScale(float s);
 // 0x1F の半径に arg7（|−0.4..−0.8|）を使う（--ringradius dist）
 void EffectSetRingDist(bool on);
 bool EffectRingDist();
+// 配置の形（0=line / 1=ring（均等） / 2=spiral（らせん））と円周を張る面
+void EffectSetArrange(int mode);
+int  EffectArrange();
+void EffectSetRingPlane(int plane);
+int  EffectRingPlane();
+void EffectSetSpiralTurns(float t);
 
 // 実行された VM op の集計（--opstat）。vm=1: VM#1 / vm=2: VM#2
 struct OpCount { int op; int count; };

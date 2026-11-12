@@ -67,36 +67,68 @@ namespace
     bool g_Ring     = true;        // 0x06/0x1F を円周上配置にする（--ring on/off）
     bool g_RingDist = false;       // 0x1F の半径に arg7（-0.4..-0.8 の絶対値）を使う
                                    //   （--ringradius dist。既定 xy = arg0/arg1）
-    float g_RingScale = 1.0f;      // 円周半径の倍率（--ringscale N。データの 0.1..0.5 m は
-                                   //   ビルボード 2..4 m より小さく、既定では画像に現れない）
+    float g_RingScale = 4.0f;      // 円周半径の倍率（--ringscale N。既定 4）
+                                   //   引数の半径 (0.1..0.5 m) は「サブ粒子スケール」で、
+                                   //   ビルボード（2..4 m）より小さいため、そのままでは
+                                   //   円周が埋もれて直線に見える。4 倍でリングとして見える。
+    int   g_Arrange  = 1;          // 0=line（旧）/ 1=ring（円周・均等）/ 2=spiral（らせん）
+    int   g_Plane    = 0;          // 0=xy / 1=xz / 2=yz（円周を張る面）
+    float g_SpiralTurns = 1.0f;    // らせんの巻き数（--spiralturns）
     int  g_OpStat[3][256] = {};    // [vm][op] の実行回数（--opstat）
 
     //------------------------------------------------------------------
-    // 円周（楕円）上への配置（--ring on の既定。0x06 / 0x1F が使う）
-    //   AltanaView の 0x06 / 0x07 / 0x1F は「円運動＋乱数位相」
-    //   （docs/ANALYSIS-AltanaView-Draw.md §10.6c, thunk_0042e1b8 系）。
-    //   引数 (rX, rY) を XY 平面の半径として、位相だけを乱数にする。
-    //     → 粒子は「円周上」に並ぶ（半径は全粒子で一定）
-    //   旧実装（--ring off）は 0x06 を球面乱数として扱っていたため、
-    //   半径がばらつき「塊（中詰まり）」に見えていた。
+    // 円周（楕円）／らせん上への配置（0x06 / 0x1F が使う）
+    //   AltanaView の 0x06 / 0x07 / 0x1F は「円運動＋乱数位相」。
+    //   **乱数だとムラが出て線に見える**ため、粒子番号から黄金角で
+    //   均等に割り付ける（何個出ても円周を均等に覆う）。
+    //     ring  : φ = 2π·frac(i·1/φ)          軸方向のずらし無し
+    //     spiral: 同じ φ に軸方向のずらしを加える（らせん）
+    //   半径は引数の (rX, rY)、面は --ringplane、倍率は --ringscale。
     //------------------------------------------------------------------
-    inline void PlaceOnRing(SubObject& sub, float rX, float rY)
+    inline void PlaceOnRing(SubObject& sub, float rX, float rY, int idx)
     {
-        const float phi = Rand01() * 6.283185307179586f;
+        const float kGolden = 0.6180339887498949f;          // 1/φ（黄金比の逆数）
+        float u = (float)idx * kGolden;
+        u -= floorf(u);                                     // 0..1（低食い違い＝均等）
+
+        float phi = 6.283185307179586f * u;
+        if (g_Arrange == 2) phi *= g_SpiralTurns;
+
+        const float x = cosf(phi) * rX * g_RingScale;
+        const float y = sinf(phi) * rY * g_RingScale;
+
+        // らせん: 位相と同じ配分で軸方向にずらす（1 巻きで 1 ピッチ）
+        float axial = 0.0f;
+        if (g_Arrange == 2)
+            axial = (u - 0.5f) * 2.0f * (rX + rY) * g_RingScale;
+
         float* p = sub.Pos();
-        p[0] += cosf(phi) * rX * g_RingScale;
-        p[1] += sinf(phi) * rY * g_RingScale;
+        switch (g_Plane)
+        {
+        case 1:  p[0] += x; p[2] += y; p[1] += axial; break;   // xz 面
+        case 2:  p[1] += x; p[2] += y; p[0] += axial; break;   // yz 面
+        default: p[0] += x; p[1] += y; p[2] += axial; break;   // xy 面
+        }
     }
 }
 
 void EffectSetEmitMode(bool on) { g_EmitMode = on; }
 bool EffectEmitMode() { return g_EmitMode; }
 void EffectSetEmitRate(int n) { g_EmitRate = (n > 0) ? n : 1; }
-void EffectSetRing(bool on) { g_Ring = on; }
+void EffectSetRing(bool on) { g_Ring = on; g_Arrange = on ? 1 : 0; }
 bool EffectRing() { return g_Ring; }
 void EffectSetRingScale(float s) { g_RingScale = (s > 0.0f) ? s : 1.0f; }
 void EffectSetRingDist(bool on) { g_RingDist = on; }
 bool EffectRingDist() { return g_RingDist; }
+void EffectSetArrange(int mode)
+{
+    g_Arrange = (mode >= 0 && mode <= 2) ? mode : 1;
+    g_Ring    = (g_Arrange != 0);
+}
+int  EffectArrange() { return g_Arrange; }
+void EffectSetRingPlane(int plane) { g_Plane = (plane >= 0 && plane <= 2) ? plane : 0; }
+int  EffectRingPlane() { return g_Plane; }
+void EffectSetSpiralTurns(float t) { g_SpiralTurns = (t > 0.0f) ? t : 1.0f; }
 
 void EffectOpStatReset()
 {
@@ -232,7 +264,7 @@ static void Vm1(const MotionInstance& mi, SubUnit& su, const EffectContext& ctx)
         {
             if (g_Ring)
             {
-                PlaceOnRing(su.sub, arg[0], arg[1]);
+                PlaceOnRing(su.sub, arg[0], arg[1], mi.emitSpawned);
                 break;
             }
 
@@ -260,9 +292,9 @@ static void Vm1(const MotionInstance& mi, SubUnit& su, const EffectContext& ctx)
                 //   --ringradius dist でこちらを使う（既定は arg0/arg1）。
                 const float d = (InstLen(p) >= 8) ? fabsf(arg[7]) : 0.0f;
                 if (g_RingDist && d > 1e-6f)
-                    PlaceOnRing(su.sub, d, d);
+                    PlaceOnRing(su.sub, d, d, mi.emitSpawned);
                 else
-                    PlaceOnRing(su.sub, arg[0], arg[1]);
+                    PlaceOnRing(su.sub, arg[0], arg[1], mi.emitSpawned);
             }
             break;
         }
