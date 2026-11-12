@@ -1,9 +1,12 @@
 # 設計書: 粒子ハンドル（index）方式への変更（2026-11-12）
 
-対象: `feature/schedule` / HEAD `83725f5`
+対象: `feature/schedule` / HEAD `3911047`
 種別: **設計（この文書の作成時点でコード変更なし）**
 目的: `0x25` / `0x3C` / `0x44` / `0x53` / `0x6A` が前提とする「粒子・インスタンスへの参照」を、
 ホストポインタではなく**安定したハンドル**で表現できるようにする。
+
+> **§9 に「周知事項（2026-11-12 時点で実測により確定した前提）」をまとめた。**
+> 実装・検証に着手する前に必ず読むこと。
 
 ---
 
@@ -164,3 +167,93 @@ memcpy(&target->subs[0].sub, &su.sub, sizeof(SubObject));   // 0x108 B
 
 本設計で実装に進んでよいか（`--link off` 既定・A/B 可能な形）。承認後に
 「実装計画 → テスト計画 → 検証計画 → 実装」の順で進める。
+
+---
+
+## 9. 周知事項（2026-11-12 時点で実測により確定した前提）
+
+以下は**推測ではなく実測**。以後の作業はこれを前提にする。
+
+### 9.1 AltanaView の起動条件（重要）
+
+- `List` フォルダは**カレントディレクトリ**基準で解決される。
+  `D:\tool\AltanaView-master` 以外から起動すると
+  `List folder "…\List" does not exist.` で**停止**する。
+- 正しい起動:
+  ```powershell
+  Start-Process 'D:\tool\AltanaView-master\AltanaView.exe' -WorkingDirectory 'D:\tool\AltanaView-master'
+  ```
+  その後に Frida で **attach**（`spawn` は CWD を継承して失敗する）。
+- 確認済み: `d3d9.DLL` / `dsound.DLL` までロードされ、ダイアログは出ない。
+
+### 9.2 解析パイプライン（再現手順）
+
+| 手順 | 内容 |
+|---|---|
+| 1 | `AltanaView.exe` = 182,272 B（2020-05-17）**UPX 圧縮**（`UPX0`/`UPX1`/`.rsrc`） |
+| 2 | Frida でメモリ像を吸い出し（base `0x400000` / SizeOfImage `0x76000` / 483,328 B） |
+| 3 | 1 セクションに再マップして PE 復元 → `%TEMP%\av_unpacked.exe`（sha256 `6d9d803f…9318`） |
+| 4 | Ghidra `D:\ghidra_12.2_PUBLIC` で解析（`GHIDRA_INSTALL_DIR` と **JDK** の `JAVA_HOME` が必要。JRE では不可） |
+| 5 | スクリプトは **`.java`**（`.py` は PyGhidra 必須で動かない） |
+| 6 | REA から使う場合は `GHIDRA_INSTALL_DIR` / `JAVA_HOME` を MCP 登録に焼き込む（`rea setup --client cline --yes`） |
+
+### 9.3 VM の確定事項
+
+| 項目 | 実測値 |
+|---|---|
+| VM#1 | `0x40e650`（`ctx+0x24` = プログラム、`gen+0x10` = id、`gen+0x24` = プログラム） |
+| VM#2 | `0x40f4b0`（`ctx+0x28` = プログラム） |
+| 呼び出し元 | VM#2 ← `0x40e0b0`（生成）/ `0x40e650`（VM#1）/ `0x410090`（再初期化） |
+| VM#2 の実 op | `2,3,5,6,8,9` / `0x0F..0x21` / `0x27,0x28` / `0x2C` / `0x34..0x37` / `0x25,0x33,0x46` |
+| 未知 op | `0x0D` `0x0E` `0x5F` `0x29` `0x2B` は**元実装でも handler が無くスキップ**（→ opstat の値は正常） |
+| キー補間 | `0x40f820`。**前進時はキー間の絶対補間／非前進時は現在値基準**の非対称。表は `+0x18` の 8 B `[time,value]` |
+| attached | `ctx+0x1a0 != 0` は**行列コピーを省くだけ**。VM は実行する（旧実装の「VM 停止」は誤り） |
+| `0x1F` | 方向ベクトル `arg2..4`、静的角 `arg5,arg6`、角度 `arg7±arg8`、フラグ `arg9,arg10`。**Z(arg5) → Y(arg6) の順** |
+| 回転の実体 | `0x457084 → 0x42ed2b`（RotZ）、`0x457080 → 0x42ec88`（RotY）、`0x45700c → 0x436695`（合成）。**D3DX は静的リンク**（`d3dx9_*.dll` は無い） |
+| `0x44`/`0x53`/`0x6A` | `new 0x1d8` + 名前（`arg1`）から生成し、**ポインタを dest スロットへ float で格納** |
+| `0x3C` / `0x25` | `memcpy(obj + 0xA0, particle, 0x108)`（＝本設計の対象） |
+| 該当 op を持つ DAT | `11\10-14` / `12\10-19` / `0\0`（**`11\17` `11\18` `11\22` `12\43` は 0 回**） |
+
+### 9.4 参照（動画）との比較条件
+
+| 項目 | 実測値 |
+|---|---|
+| 参照の内容 | AltanaView で `11/18` を NPC に付けて再生（960×540、3D ビュー **x282..907 / y2..514 = 625×512**、背景 `RGB(64,240,240)`） |
+| カメラ | `AltanaView.ini` の `Translation=(0.008, 0.985, 2.605)` → **距離 2.785**（我々の既定は 14） |
+| モデル単体 | bbox 163×355 / aspect 0.459 / fill 0.409 / hollow 0.447 |
+| 効果あり（`v_0062`） | bbox **610×511** / aspect **1.194** / fill **0.323** / hollow **0.670** |
+
+### 9.5 比較用の CLI（2026-11-12 追加分）
+
+```powershell
+.\x64\Release\EffectTest.exe --shot "$ROM\11\18.DAT" out.png --frames 90 `
+  --res 625x512 --dist 2.8 --bg 40F0F0 --emitrate 60 --scale 0.10
+tools\RingStats.ps1 -Path out.png    # bbox/aspect/fill/hollow/peak
+```
+
+| フラグ | 既定 | 用途 |
+|---|---|---|
+| `--dist` / `--yaw` / `--pitch` | 14 / π / 0.35 | カメラ（参照は 2.785） |
+| `--res WxH` | 1280x720 | 撮影解像度（参照は 625x512） |
+| `--scale N` | 1.0 | 粒子サイズ倍率（参照相当は 0.08〜0.10。0.09 以上で画面が飽和） |
+| `--gain N` | 1.5 | 色ゲイン（PS の ×1.5 を相殺） |
+| `--keymode incr\|abs` | incr | キー補間（incr = 実測どおり） |
+| `--arrange` / `--ringplane` / `--ringscale` / `--spiralturns` / `--ringradius` | ring / xy / 4 / 1 / xy | `0x06`=円周、`0x1F`=円錐の配置制御 |
+| `--link on\|off` | off | §3 のハンドル機構（**未実装**） |
+
+### 9.6 現状の一致度（`--res 625x512 --dist 2.8 --scale 0.10`）
+
+| 指標 | 参照 | 我々 | 状態 |
+|---|---|---|---|
+| bbox | 610×511 | 625×461 | 近い |
+| aspect | 1.194 | 1.356 | 差 0.16 |
+| fill | 0.323 | 0.360 | 差 0.04 |
+| hollow | 0.670 | 0.948 | 差 0.28（参照中央の**キャラクター**由来） |
+
+### 9.7 未確定（次の作業）
+
+1. `0x1F` の**乱数角のかけ方**（`local_1b0` / `local_1ac` / `local_1c4` の cos/sin の組合せ）
+2. **近接クランプ**（`--scale` 0.08→0.09 で `fill` が 0.195→0.978 に跳ぶ）
+3. **モデル描画**（`--model human` はロードされるが画面への寄与が未検証）
+4. VM#1 `0x72` / `0x1D` 等の未実装 op（形状の残差要因）
+

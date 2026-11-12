@@ -334,6 +334,7 @@ next < 16 で終端 / pos += next
 ## 参考
 
 - **できること一覧（コード上の変更点）**: `docs/CAPABILITIES-2026-11-12.md`
+- **逆コンパイルで確定した前提（周知事項）**: `docs/DESIGN-Particle-Handle-2026-11-12.md` §9
 - **数値の正（ゴールデン）**: `docs/GOLDEN.md`（以下の測定値は当時の記録で、最新は GOLDEN.md）
 - 解析レポート: `D:\tools\AltanaView-master\_rea\EFFECT_MOTION_ANALYSIS.md`
 - 擬似C 抽出物: `%TEMP%\av_eff\*.c`

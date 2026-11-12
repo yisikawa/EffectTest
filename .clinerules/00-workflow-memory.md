@@ -83,7 +83,8 @@
   実測: `11\17` `g002` の `0x1F`(0.2,0.2) → r=0.190 / CV 0.158（旧 0.008 / 0.707）
 - 進捗の詳細: `docs/PROGRESS-2026-11-09.md`、解析: `docs/ANALYSIS-AltanaView-Draw.md`、
   ゴールデン: `docs/GOLDEN.md`、レビュー対応: `docs/REVIEW-2026-11-10-Issues-And-Fixes.md`、
-  **できること一覧: `docs/CAPABILITIES-2026-11-12.md`**
+  **できること一覧: `docs/CAPABILITIES-2026-11-12.md`**、
+  **周知事項（逆コンパイルで確定した前提）: `docs/DESIGN-Particle-Handle-2026-11-12.md` §9**
 
 ## 次にやること（2026-11-09 終了時点）
 1. `--dist/--yaw/--pitch` を CLI 化し、参照 `frames/v_0062.png` と同条件で A/B（縦横比 0.40±0.15 が目標）
