@@ -30,9 +30,10 @@
 ## 現行ゴールデン（2026-11-09 時点・要更新時は本項を直す）
 ```
 --frames 90 / 既定（--layout off・--emit on・--geo off）
-  11\17 = 5,023 / 129    11\18 = 3,053 / 465
-  11\22 =   962 / 298    12\43 = 3,615 / 244
+  11\17 = 5,310 / 115    11\18 = 3,488 / 462
+  11\22 =   962 / 298    12\43 = 3,500 / 342
 旧挙動の再現: --layout on --emit off で 3,625 / 3,098 / 5,686 / 3,628
+  円周配置 off: --ring off で 5,023 / 129・3,053 / 465・3,615 / 244
 広域回帰: 11\0-11\19 / 12\0-12\19 = 40/40
 --selftest: keys unresolved=0（11\17=8/8, 11\18=9/9, 11\22=33/33, 12\43=10/10）
             texnames==texspecific / rebuild=ok
@@ -49,6 +50,9 @@
 | `--geo on\|off` | off | `0x1F` の 3D 形状を描画 |
 | `--opstat` | off | 実行 VM op を `effecttest_log.txt` に集計出力 |
 | `--colorfallback on\|off` | **on** | RGB=0→白 / α≤0→1 の代替（off で A/B。2026-11-12 追加） |
+| `--ring on\|off` | **on** | `0x06`/`0x1F` を円周上に配置（off で旧: 球面乱数 / no-op。2026-11-12 追加） |
+| `--ringradius xy\|dist` | xy | `0x1F` の半径（`dist` = \|arg7\|。2026-11-12 追加） |
+| `--ringscale N` | 1 | 円周半径の倍率（画像でリングを確認するとき 2〜4。2026-11-12 追加） |
 
 ## 解析メモ（要点のみ・詳細は docs）
 - 逆コンパイル: `%TEMP%\AltanaViewRE_out_unpacked\04_decompiled.c`
@@ -61,6 +65,9 @@
 - **0x19 キー表**: `size = 0x18 + 8n`、`+0x18` から `[time(float), value(float)]`。
   `+0x04` はチャンクヘッダ、`+0x08..+0x17` は 0（件数フィールドは無い → `(size-0x18)/8`）。
   VM#1 のキー op の第 3 dword は**ファイルオフセットではなく 0x19 チャンク名**（`"k006"` 等）
+- **円周配置**: VM#1 `0x06`（len=4, 引数 2 個）/ `0x1F`（len=12, 引数 11 個）は
+  「円運動＋乱数位相」。先頭 2 引数を XY の楕円半径として `pos += (cosφ·rX, sinφ·rY)`。
+  実測: `11\17` `g002` の `0x1F`(0.2,0.2) → r=0.190 / CV 0.158（旧 0.008 / 0.707）
 - 進捗の詳細: `docs/PROGRESS-2026-11-09.md`、解析: `docs/ANALYSIS-AltanaView-Draw.md`、
   ゴールデン: `docs/GOLDEN.md`、レビュー対応: `docs/REVIEW-2026-11-10-Issues-And-Fixes.md`
 

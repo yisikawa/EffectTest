@@ -274,12 +274,16 @@ next < 16 で終端 / pos += next
 - **キーフレーム補間**（VM#2 `0x0F..0x21`）。表は VM#1 のキー op が設定する
   **`0x19` チャンク名**（`"k006"` 等）で、`Find(name, 0x19)` → `+0x18` から
   `[time, value]` を読む（2026-11-12 にオフセット誤解を修正）
+- **円周上配置**（VM#1 `0x06` / `0x1F` = 円運動＋乱数位相）。引数の先頭 2 個を
+  XY 平面の楕円半径 `(rX, rY)` とし、位相だけ乱数にする（`--ring`。既定 on。
+  `--ring off` で旧・球面乱数／no-op に戻せる）
 - サブオブジェクトのバイト配置（`0x108 + dest*4`）
 
 ### 近似 / 未実装（意図的に明示）
 | 項目 | 状況 |
 |---|---|
 | VM#1 `0x03/0x08/0x0C/0x41`（回転・補間系） | `0x03/0x0C/0x13` は AltanaView 実測どおり `dest += rand(-arg,+arg)` に修正済み。`0x08/0x41` は近似（`dest += arg`） |
+| VM#1 `0x1F`（円運動） | 先頭 2 引数を楕円半径とした**円周上配置**として実装。残り 9 引数（`arg7`=-0.4..-0.8 / `arg8`=0.8..1.5 ほか）は未確定 |
 | VM#2 `0x0F..0x21` | **実装済み**（キー表は `0x19` 名で解決。未解決時はスロットを書かない） |
 | VM#2 `0x25`, `0x33/0x34-0x37/0x46`, `0x5F`, `0x29` | 未実装（IP 前進のみ） |
 | VM#2 `0x27/0x28`（UV オフセット） | 実装済み（`--uvscroll on\|cell` で描画に適用。既定 off） |
@@ -402,6 +406,12 @@ AltanaView の `SetRenderState` を静的に走査すると、エフェクト描
   - 2026-11-12 修正: `g_UvScroll` が `bool` だったため `cell`(=2) が `on`(=1) に化けていた（C4305）。`int` 化して解消
 - 色/α の代替: `--shot --colorfallback on|off "<dat>" out.png`
   （`on` = RGB 全 0 → 白 / α≤0 → 1 の代替を適用（既定・従来挙動）。`off` = 代替せず VM の値をそのまま使う。A/B 用）
+- 粒子の初期配置: `--shot --ring on|off "<dat>" out.png`
+  （`on`（既定）= `0x06`/`0x1F` の引数を楕円半径として**円周上**に配置。`off` = 旧挙動（`0x06` 球面乱数 / `0x1F` no-op））
+  - `--ringradius xy|dist` : `0x1F` の半径の出どころ（`xy`=arg0/arg1 既定 / `dist`=|arg7|）
+  - `--ringscale N` : 円周半径の倍率（既定 1 = データ値）。データの半径 0.1〜0.7 m は
+    ビルボード（2〜4 m）より小さいため、見た目で確認するときは 2〜4 程度にする
+  - 形状の判定は `tools\RingStats.ps1`（`hollow < 1.0` で中抜け＝リング状）
 - トレース: `--shot --trace "<dat>" out.png` → `effecttest_trace.csv`（列: `frame,instance,sub,name,elapsed,t01,px,py,pz,sx,sy,sz,r,g,b,a`。**サブ（粒子）単位**）
 - 時刻指定: `--shot --frames N "<dat>" out.png`（既定 90 = 1.5 s。1 フレーム = 1/60 s）
 - 骨格（GPU 不要）: `--skel "<model dat>" [motion4]`（骨数・モーション一覧・姿勢の変化をログ）
