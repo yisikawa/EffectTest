@@ -59,6 +59,7 @@ namespace
     bool  g_BlendAuto = false;    // --blend auto: テクスチャの黒割合で alpha / add を自動選択
     bool  g_GeoFlat   = false;    // 0x1F の XZ 平面を地面デカールとして描く（--geoflat on）
     int   g_SizeMode  = 3;        // 0: scale / 1: 0x21 quad / 2: 正方形（scale[2]）/ 3: メートル（既定）
+    float g_Gain      = 1.5f;     // 色のゲイン（PS の ×1.5 と等価。--gain で A/B）
     // RGB=0 → 白 / α≤0 → 1 の代替（問題 7）。既定 on（現状維持）、--colorfallback off で A/B
     bool  g_ColorFallback = true;
 
@@ -678,6 +679,13 @@ static void RenderScene(bool present)
                 if (v0n + vh > 1.0f) v0n -= 1.0f;
                 uvDraw[0] = u0n; uvDraw[1] = v0n;
                 uvDraw[2] = u0n + uw; uvDraw[3] = v0n + vh;
+            }
+
+            // --gain: PS の ×1.5 を相殺して任意のゲインにする（A/B 用）
+            if (g_Gain != 1.5f)
+            {
+                const float k = g_Gain / 1.5f;
+                rgba[0] *= k; rgba[1] *= k; rgba[2] *= k;
             }
 
             GfxDrawQuad(center, axisR, axisU, rgba, uvDraw, srv);
@@ -1757,6 +1765,29 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
                 else if (_stricmp(mode, "on")   == 0) g_UvScroll = 1;   // 0..1 を巡回
                 else if (_stricmp(mode, "cell") == 0) g_UvScroll = 2;   // セル内を巡回
                 else { Log("[shot] unknown uvscroll: %s", mode); return 2; }
+                continue;
+            }
+
+            // キー補間の方式（incr = 実測どおりの増分補間 / abs = 従来の絶対補間）
+            if (_stricmp(tok, "--keymode") == 0)
+            {
+                char mode[MAX_PATH] = {};
+                if (!NextToken(p, mode, MAX_PATH)) return 2;
+                if      (_stricmp(mode, "incr") == 0) EffectSetKeyIncr(true);
+                else if (_stricmp(mode, "abs")  == 0) EffectSetKeyIncr(false);
+                else { Log("[shot] unknown keymode: %s", mode); return 2; }
+                Log("[shot] keymode=%s", mode);
+                continue;
+            }
+
+            // 色のゲイン（PS の ×1.5 と等価。既定 1.5）
+            if (_stricmp(tok, "--gain") == 0)
+            {
+                char num[MAX_PATH] = {};
+                if (!NextToken(p, num, MAX_PATH)) return 2;
+                const double f = atof(num);
+                if (f >= 0.0) g_Gain = (float)f;
+                Log("[shot] gain=%.3f", g_Gain);
                 continue;
             }
 

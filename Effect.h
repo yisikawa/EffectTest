@@ -178,6 +178,7 @@ struct SubUnit
     //   keyCount == 0 は未解決。VM#2 はその場合スロットを書かない（0 で上書きしない）。
     uint32_t  keyFirst[SUB_DEST_N] = {};   // 0x19 のチャンク先頭 + 0x18（[time,value] の先頭）
     uint8_t   keyCount[SUB_DEST_N] = {};   // エントリ数（0..64）
+    uint8_t   keyCur[SUB_DEST_N]   = {};   // 補間カーソル（元実装 particle[dest+0x43] の前進位置）
 };
 
 //----------------------------------------------------------------------
@@ -229,6 +230,9 @@ void EffectSetRingScale(float s);
 // 0x1F の半径に arg7（|−0.4..−0.8|）を使う（--ringradius dist）
 void EffectSetRingDist(bool on);
 bool EffectRingDist();
+// キー補間の方式（true = 実測どおりの増分補間 / false = 従来の絶対補間）
+void EffectSetKeyIncr(bool on);
+bool EffectKeyIncr();
 // 配置の形（0=line / 1=ring（均等） / 2=spiral（らせん））と円周を張る面
 void EffectSetArrange(int mode);
 int  EffectArrange();

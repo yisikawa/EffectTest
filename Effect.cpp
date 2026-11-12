@@ -345,6 +345,8 @@ void MotionInstance::InitSub(SubUnit& su, bool applyGeo)
     su.sub.Clear();
     su.sub.Elapsed() = 0.0f;
     su.sub.T01()     = 0.0f;
+    // キー補間カーソルも初期化（元実装はスポーン時に新しい粒子を作る）
+    for (int i = 0; i < (int)SUB_DEST_N; ++i) su.keyCur[i] = 0;
     float* prev = su.sub.At(SUB_PREV);
     prev[0] = prev[1] = prev[2] = 0.0f;
 

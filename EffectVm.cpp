@@ -49,6 +49,45 @@ namespace
         return have ? (scale * prevV) : 0.0f;
     }
 
+    // キー補間（実測 FUN_0040f820 の移植・2026-11-12 逆コンパイルで確定）
+    //   カーソル（粒子ごと）を前進させ、**現在値 `out` を基準に**増分で寄せる:
+    //     out += (tNew - tOld) * (scale*value - out) / (keyTime - tOld)
+    //   → 絶対補間ではなく「キー時刻までの残り距離で按分する」形。
+    //   tOld == tNew のときは何もしない（= 元実装の早期 return）。
+    float EvalKeyTrackIncr(const DatFile& dat, uint32_t first, uint32_t count,
+                           float tOld, float tNew, float scale,
+                           uint32_t& cursor, float out)
+    {
+        if (first == 0u || count == 0u) return out;
+        if (tOld == tNew) return out;
+        if (count > 64u) count = 64u;
+        if (cursor >= count) cursor = count - 1;
+
+        float kt = 0.0f, kv = 0.0f;
+        // カーソルを tNew 以下の最後のキーまで前進（元実装はポインタを進めるだけ）
+        while (cursor + 1u < count)
+        {
+            const uint32_t en = first + (cursor + 1u) * 8u;
+            if (!dat.InRange(en, 8)) break;
+            const uint8_t* qn = dat.At(en);
+            float tn = 0.0f, vn = 0.0f;
+            memcpy(&tn, qn, 4); memcpy(&vn, qn + 4, 4);
+            if (tNew < tn) break;
+            ++cursor;
+        }
+        const uint32_t ec = first + cursor * 8u;
+        if (!dat.InRange(ec, 8)) return out;
+        const uint8_t* q = dat.At(ec);
+        memcpy(&kt, q, 4);
+        memcpy(&kv, q + 4, 4);
+        if (kt < -1e6f || kt > 1e6f || kv < -1e12f || kv > 1e12f) return out;
+
+        const float keyVal = scale * kv;
+        const float denom  = kt - tOld;
+        if (fabsf(denom) < 1e-6f) return keyVal;
+        return out + (tNew - tOld) * (keyVal - out) / denom;
+    }
+
     // VM#1 のキー表設定 op（実測 FUN_0040e0b0 L11030-11037）
     //   `(0x20<op<0x30) || (0x32<op<0x37) || (0x58<op<0x5c)`
     //   VM#1 の保存判定と --selftest の監査で共用する。
@@ -65,6 +104,9 @@ namespace
     bool g_EmitMode = true;
     int  g_EmitRate = 24;          // 既定の放出レート（個/秒）。--emitrate で変更
     bool g_Ring     = true;        // 0x06/0x1F を円周上配置にする（--ring on/off）
+    bool g_KeyIncr  = false;       // キー補間を実測どおり「カーソル前進＋増分」で行う（--keymode incr）
+                                   //   ※ 逆コンパイルの解釈が未確定のため既定 off（abs）。incr は 11\18 で
+                                   //     hollow 2.04 -> 3.40 と悪化した（アセンブリで要確認）
     bool g_RingDist = false;       // 0x1F の半径に arg7（-0.4..-0.8 の絶対値）を使う
                                    //   （--ringradius dist。既定 xy = arg0/arg1）
     float g_RingScale = 4.0f;      // 円周半径の倍率（--ringscale N。既定 4）
@@ -120,6 +162,8 @@ bool EffectRing() { return g_Ring; }
 void EffectSetRingScale(float s) { g_RingScale = (s > 0.0f) ? s : 1.0f; }
 void EffectSetRingDist(bool on) { g_RingDist = on; }
 bool EffectRingDist() { return g_RingDist; }
+void EffectSetKeyIncr(bool on) { g_KeyIncr = on; }
+bool EffectKeyIncr() { return g_KeyIncr; }
 void EffectSetArrange(int mode)
 {
     g_Arrange = (mode >= 0 && mode <= 2) ? mode : 1;
@@ -452,6 +496,7 @@ static bool Vm2(const MotionInstance& mi, SubUnit& su, float dt, float rootDurat
     //   （折返しはしない。寿命後の扱いは呼び出し側 = 再初期化 or 削除）
     //--------------------------------------------------------------
     float t = su.sub.Elapsed() + dt;
+    const float tOld = su.sub.T01();          // 補間の基準（元実装 particle[0x3c] の旧値）
     bool ended = false;
     if (dur > 0.0f && t >= dur)
     {
@@ -548,7 +593,18 @@ static bool Vm2(const MotionInstance& mi, SubUnit& su, float dt, float rootDurat
                 // 0x12..0x14 は角度（度 → ラジアン）
                 const float scale = (op >= 0x12 && op <= 0x14) ? 3.14159265f : 1.0f;
                 float* outSlot = su.sub.At(((uint32_t)op + 0x11u) * 4u);
-                outSlot[0] = EvalKeyTrack(*mi.dat, first, count, su.sub.T01(), scale);
+                if (g_KeyIncr)
+                {
+                    // 実測 FUN_0040f820: カーソル前進＋現在値基準の増分補間
+                    uint32_t cur = (dest < SUB_DEST_N) ? su.keyCur[dest] : 0u;
+                    outSlot[0] = EvalKeyTrackIncr(*mi.dat, first, count, tOld, su.sub.T01(),
+                                                  scale, cur, outSlot[0]);
+                    if (dest < SUB_DEST_N) su.keyCur[dest] = (uint8_t)cur;
+                }
+                else
+                {
+                    outSlot[0] = EvalKeyTrack(*mi.dat, first, count, su.sub.T01(), scale);
+                }
             }
             break;
         }
