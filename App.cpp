@@ -53,10 +53,14 @@ namespace
     bool  g_NoTexture = false;    // W: テクスチャを使わず白で描く（デバッグ）
     bool  g_ShowAxes  = false;    // X: 座標軸の表示（既定 OFF。起動時は何も描かない）
     float g_SizeScale = 1.0f;     // ビルボードの基準半径
-bool  g_UvScroll  = false;    // UV オフセット（sub+0xB4/0xB8）。0=off / 1=0..1 巡回 / 2=セル内巡回
-bool  g_BlendAuto = false;    // --blend auto: テクスチャの黒割合で alpha / add を自動選択
-bool  g_GeoFlat  = false;     // 0x1F の XZ 平面を地面デカールとして描く（--geoflat on）
-int   g_SizeMode  = 3;        // 0: scale / 1: 0x21 quad / 2: 正方形（scale[2]）/ 3: メートル（既定）
+    // UV オフセット（sub+0xB4/0xB8）。0=off / 1=0..1 巡回 / 2=セル内巡回
+    //   問題 2: bool だと `cell`(=2) が true(=1) に化けて 2 が到達不能になる。
+    int   g_UvScroll  = 0;
+    bool  g_BlendAuto = false;    // --blend auto: テクスチャの黒割合で alpha / add を自動選択
+    bool  g_GeoFlat   = false;    // 0x1F の XZ 平面を地面デカールとして描く（--geoflat on）
+    int   g_SizeMode  = 3;        // 0: scale / 1: 0x21 quad / 2: 正方形（scale[2]）/ 3: メートル（既定）
+    // RGB=0 → 白 / α≤0 → 1 の代替（問題 7）。既定 on（現状維持）、--colorfallback off で A/B
+    bool  g_ColorFallback = true;
 
 // 骨格をエフェクトのルート変換として使う（--model / --motion / --bone）
 bool      g_RootActive = false;
@@ -140,7 +144,9 @@ static void Log(const char* fmt, ...)
     char buf[1024];
     va_list ap;
     va_start(ap, fmt);
-    vsprintf_s(buf, fmt, ap);
+    // 問題 10: vsprintf_s はバッファ不足で無効パラメータハンドラ → 異常終了する。
+    //   切り詰めて必ず成功させる（書式の誤りだけは _set_invalid_parameter_handler 側のまま）。
+    _vsnprintf_s(buf, sizeof(buf), _TRUNCATE, fmt, ap);
     va_end(ap);
 
     OutputDebugStringA(buf);
@@ -152,6 +158,20 @@ static void Log(const char* fmt, ...)
         fprintf(fp, "%s\n", buf);
         fclose(fp);
     }
+}
+
+// Effect.h から呼ばれるログ窓口（Effect.cpp は Log() を持たない）
+//   Log() が改行を付けるため、呼び出し側の書式に "\n" は書かない。
+void EffectLogLine(const char* fmt, ...)
+{
+    char buf[1024];
+    va_list ap;
+    va_start(ap, fmt);
+    _vsnprintf_s(buf, sizeof(buf), _TRUNCATE, fmt, ap);
+    va_end(ap);
+
+    // 改行は呼び出し側の書式に含まれるため、そのまま渡す
+    Log("%s", buf);
 }
 
 //----------------------------------------------------------------------
@@ -547,7 +567,7 @@ static void RenderScene(bool present)
             if (g_Effect.Geo() && mi.gen->hasGeo && !mi.gen->geoQuads.empty())
             {
                 float rgbaG[4] = { c[0], c[1], c[2], c[3] };
-                if (rgbaG[0] == 0.0f && rgbaG[1] == 0.0f && rgbaG[2] == 0.0f)
+                if (g_ColorFallback && rgbaG[0] == 0.0f && rgbaG[1] == 0.0f && rgbaG[2] == 0.0f)
                     rgbaG[0] = rgbaG[1] = rgbaG[2] = 1.0f;
                 bool drewGeo = false;
                 // α が 0 のときは粒子がフェード済み＝ジオメトリも描かない
@@ -616,11 +636,16 @@ static void RenderScene(bool present)
             }
 
             float rgba[4] = { c[0], c[1], c[2], c[3] };
-            if (rgba[0] == 0.0f && rgba[1] == 0.0f && rgba[2] == 0.0f)
+            // 問題 7: 代替処理は不具合（キー表の未解決など）を隠すため、
+            //   --colorfallback off で無効化して A/B できるようにする（既定 on）。
+            if (g_ColorFallback)
             {
-                rgba[0] = rgba[1] = rgba[2] = 1.0f;      // VM が色を書いていない場合の代替
+                if (rgba[0] == 0.0f && rgba[1] == 0.0f && rgba[2] == 0.0f)
+                {
+                    rgba[0] = rgba[1] = rgba[2] = 1.0f;  // VM が色を書いていない場合の代替
+                }
+                if (rgba[3] <= 0.0f) rgba[3] = 1.0f;
             }
-            if (rgba[3] <= 0.0f) rgba[3] = 1.0f;
 
             // 注: 0x21 の頂点色（+12 の D3DCOLOR）の乗算は、当方の解釈では黒化して
             //     破綻したため未適用。AltanaView は FUN_00401f70 で (v * inst) >> 7 を
@@ -1206,11 +1231,19 @@ static int RunSelfTest(const char* path)
     }
     eff.Build(dat);
 
+    // キー表参照（0x19 名）の解決監査（問題 1）。「解決率 100%」がゴールデン
+    const KeyAudit ka = EffectKeyAudit(dat, eff.Generators());
+
     fprintf(fp, "file      = %s\n", path);
     fprintf(fp, "size      = %u bytes\n", dat.Size());
     fprintf(fp, "chunks    = %zu\n", dat.Chunks().size());
     fprintf(fp, "generators= %zu\n", eff.Generators().size());
     fprintf(fp, "prog      = 0x%X\n", eff.ProgStart());
+    fprintf(fp, "keys      = %d ops, %d resolved, %d unresolved\n",
+            ka.ops, ka.resolved, ka.unresolved);
+    // 0x20 の数と specific 名の数は一致する（問題 3 の観測点）
+    fprintf(fp, "texnames  = %zu texspecific = %zu\n",
+            eff.TexNameCount(), eff.TexSpecificCount());
 
     for (const GeneratorBlock& g : eff.Generators())
     {
@@ -1262,6 +1295,23 @@ static int RunSelfTest(const char* path)
     }
 
     fprintf(fp, "\nsubtl    = %zu\n", eff.SubTimelineCount());
+    fprintf(fp, "missing   = %d generator(s) unresolved\n", eff.MissingGenerators());
+
+    //--------------------------------------------------------------
+    // 再構築の検査（問題 3）: 同一 EffectContext で 2 回 Build しても
+    //   テクスチャ索引が累積しないこと。
+    //--------------------------------------------------------------
+    const size_t tn1 = eff.TexNameCount();
+    const size_t ts1 = eff.TexSpecificCount();
+    const size_t g1  = eff.Generators().size();
+    eff.Build(dat);
+    const bool rebuildOk = (eff.TexNameCount() == tn1) &&
+                           (eff.TexSpecificCount() == ts1) &&
+                           (eff.TexNameCount() == eff.TexSpecificCount()) &&
+                           (eff.Generators().size() == g1);
+    fprintf(fp, "rebuild   = %s (texnames=%zu->%zu texspecific=%zu->%zu gen=%zu->%zu)\n",
+            rebuildOk ? "ok" : "MISMATCH",
+            tn1, eff.TexNameCount(), ts1, eff.TexSpecificCount(), g1, eff.Generators().size());
 
     fclose(fp);
     return 0;
@@ -1707,6 +1757,17 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
                 else if (_stricmp(mode, "on")   == 0) g_UvScroll = 1;   // 0..1 を巡回
                 else if (_stricmp(mode, "cell") == 0) g_UvScroll = 2;   // セル内を巡回
                 else { Log("[shot] unknown uvscroll: %s", mode); return 2; }
+                continue;
+            }
+
+            // 色/α の代替処理（RGB=0→白 / α≤0→1）の A/B（問題 7）。既定 on
+            if (_stricmp(tok, "--colorfallback") == 0)
+            {
+                char mode[MAX_PATH] = {};
+                if (!NextToken(p, mode, MAX_PATH)) return 2;
+                if      (_stricmp(mode, "on")  == 0) g_ColorFallback = true;
+                else if (_stricmp(mode, "off") == 0) g_ColorFallback = false;
+                else { Log("[shot] unknown colorfallback: %s", mode); return 2; }
                 continue;
             }
 

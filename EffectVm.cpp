@@ -17,19 +17,19 @@
 namespace
 {
     // キーフレーム表の線形補間（AltanaView FUN_0040f820 の移植・簡略版）
-    //   表は 8 バイト単位の [time, value]。time は t01（0..1）の領域。
-    //   状態を持たず毎回先頭から t01 まで走査する（元実装はポインタを進めるだけ）。
-    float EvalKeyTrack(const DatFile& dat, uint32_t off, float t01, float scale)
+    //   表は 0x19 チャンクの +0x18 から 8 バイト単位の [time, value]。
+    //   time は t01（0..1）の領域。count 件だけ読み、チャンク外は読まない。
+    //   先頭キーが 0 より後（例 0.225）のときは、最初の区間の傾きで手前を外挿する。
+    float EvalKeyTrack(const DatFile& dat, uint32_t first, uint32_t count, float t01, float scale)
     {
-        if (off == 0u || !dat.InRange(off, 8)) return 0.0f;
-        const uint8_t* p = dat.At(off);
-        if (p == nullptr) return 0.0f;
+        if (first == 0u || count == 0u) return 0.0f;
+        if (count > 64u) count = 64u;
 
         float prevT = 0.0f, prevV = 0.0f;
         bool  have  = false;
-        for (int i = 0; i < 64; ++i)
+        for (uint32_t i = 0; i < count; ++i)
         {
-            const uint32_t e = off + (uint32_t)i * 8u;
+            const uint32_t e = first + i * 8u;
             if (!dat.InRange(e, 8)) break;
             const uint8_t* q = dat.At(e);
             float t = 0.0f, v = 0.0f;
@@ -47,6 +47,14 @@ namespace
             prevT = t; prevV = v;
         }
         return have ? (scale * prevV) : 0.0f;
+    }
+
+    // VM#1 のキー表設定 op（実測 FUN_0040e0b0 L11030-11037）
+    //   `(0x20<op<0x30) || (0x32<op<0x37) || (0x58<op<0x5c)`
+    //   VM#1 の保存判定と --selftest の監査で共用する。
+    inline bool IsKeyOp(uint8_t op)
+    {
+        return (op > 0x20 && op < 0x30) || (op > 0x32 && op < 0x37) || (op > 0x58 && op < 0x5C);
     }
 
     inline float Rand01() { return (float)rand() / (float)RAND_MAX; }
@@ -105,16 +113,34 @@ static void Vm1(const MotionInstance& mi, SubUnit& su, const EffectContext& ctx)
 
         const float* arg = reinterpret_cast<const float*>(p + 4);
         const uint32_t dest = w0 >> 13;
-        float* d = (dest < SUB_DEST_N) ? su.sub.Dest(dest) : nullptr;
+        // 問題 5: Dest() を返す op は最大 3 float を書く。`dest + 4` で判定すれば
+        //   f[] の末尾を越えない（static_assert で保証）。
+        float* d = (dest + 4u <= SUB_DEST_N) ? su.sub.Dest(dest) : nullptr;
 
-        //--- キーフレーム表ポインタの設定（実測 FUN_0040e0b0 L11030-11037）
+        //--- キーフレーム表の参照（実測 FUN_0040e0b0 L11030-11037）
         //   `(0x20<op<0x30) || (0x32<op<0x37) || (0x58<op<0x5c)`
-        //   → particle[dest+0x43] = 命令の 3 番目の dword（= 表のオフセット）
-        if ((op > 0x20 && op < 0x30) || (op > 0x32 && op < 0x37) || (op > 0x58 && op < 0x5C))
+        //   → particle[dest+0x43] = 命令の 3 番目の dword
+        //   **第 3 dword はファイルオフセットではなく 0x19 チャンク名**（"k006" 等 /
+        //   実測 27/27）。ここで名前解決し、表の先頭と件数だけを保持する（問題 1）。
+        if (IsKeyOp(op))
         {
-            uint32_t off = 0;
-            memcpy(&off, p + 8, 4);
-            if (dest < SUB_DEST_N) su.keyOff[dest] = off;
+            if (dest < SUB_DEST_N)
+            {
+                char nm[5] = {};
+                memcpy(nm, p + 8, 4);
+                const DatChunk* kc = mi.dat->Find(nm, 0x19);
+                if (kc != nullptr && kc->size > 0x18)
+                {
+                    const uint32_t n = (kc->size - 0x18u) / 8u;   // エントリ数（ヘッダに件数は無い）
+                    su.keyFirst[dest] = kc->offset + 0x18u;
+                    su.keyCount[dest] = (uint8_t)((n > 64u) ? 64u : n);
+                }
+                else
+                {
+                    su.keyFirst[dest] = 0;
+                    su.keyCount[dest] = 0;      // 未解決 → VM#2 はスロットを書かない
+                }
+            }
         }
         else
         switch (op)
@@ -351,7 +377,8 @@ static bool Vm2(const MotionInstance& mi, SubUnit& su, float dt, float rootDurat
 
         const float* arg = reinterpret_cast<const float*>(p + 4);
         const uint32_t dest = w0 >> 13;
-        float* d = (dest < SUB_DEST_N) ? su.sub.Dest(dest) : nullptr;
+        // 問題 5: Vm1 と同じ境界判定（dest + 4 <= SUB_DEST_N）
+        float* d = (dest + 4u <= SUB_DEST_N) ? su.sub.Dest(dest) : nullptr;
 
         switch (op)
         {
@@ -394,19 +421,23 @@ static bool Vm2(const MotionInstance& mi, SubUnit& su, float dt, float rootDurat
         //     0x0F..0x11 → Pos(0x80) / 0x12..0x14 → Move(0x8C, ×π) /
         //     0x15..0x17 → Scale(0x98) / 0x18..0x1B → Color(0xA4) /
         //     0x1C..0x21 → UV(0xB4..)
-        //   キー表は VM#1 の 0x21..0x2F 等が dest スロットに設定したオフセット
+        //   キー表は VM#1 が dest スロットに設定した 0x19 チャンク参照
+        //     （オフセットではなく名前。VM#1 側で解決済み。問題 1）
         case 0x0F: case 0x10: case 0x11: case 0x12: case 0x13: case 0x14:
         case 0x15: case 0x16: case 0x17: case 0x18: case 0x19: case 0x1A:
         case 0x1B: case 0x1C: case 0x1D: case 0x1E: case 0x1F:
         case 0x20: case 0x21:
         {
-            const uint32_t off = (dest < SUB_DEST_N) ? su.keyOff[dest] : 0u;
-            if (off != 0u)
+            const uint32_t first = (dest < SUB_DEST_N) ? su.keyFirst[dest] : 0u;
+            const uint32_t count = (dest < SUB_DEST_N) ? (uint32_t)su.keyCount[dest] : 0u;
+            // 未解決（0x19 名が見つからない）ときは**書かない**。
+            //   以前は 0 で上書きし、Scale の縮退と α=0 を招いていた。
+            if (first != 0u && count != 0u)
             {
                 // 0x12..0x14 は角度（度 → ラジアン）
                 const float scale = (op >= 0x12 && op <= 0x14) ? 3.14159265f : 1.0f;
                 float* outSlot = su.sub.At(((uint32_t)op + 0x11u) * 4u);
-                outSlot[0] = EvalKeyTrack(*mi.dat, off, su.sub.T01(), scale);
+                outSlot[0] = EvalKeyTrack(*mi.dat, first, count, su.sub.T01(), scale);
             }
             break;
         }
@@ -604,5 +635,46 @@ void MotionInstance::Eval(const EffectContext& ctx, float dt)
             expired = true;
         }
     }
+}
+
+//======================================================================
+//  VM#1 のキー表参照（0x19 名）の解決監査（--selftest）
+//    VM#1 を実行せずにプログラムだけを走査し、
+//      ops        = キー op（0x21..0x2F / 0x33..0x36 / 0x59..0x5B）の総数
+//      resolved   = 第 3 dword が 0x19 チャンク名として解決できた数
+//    「解決率 100%」をゴールデンにするための観測点（問題 1 の検証）。
+//======================================================================
+KeyAudit EffectKeyAudit(const DatFile& dat, const std::vector<GeneratorBlock>& gens)
+{
+    KeyAudit out;
+    for (const GeneratorBlock& g : gens)
+    {
+        uint32_t ip = g.tblB;
+        for (int guard = 0; guard < 8192; ++guard)
+        {
+            const uint8_t* p = dat.At(ip);
+            if (p == nullptr || !dat.InRange(ip, 8)) break;
+
+            uint32_t w0 = 0;
+            memcpy(&w0, p, 4);
+            const uint8_t op = (uint8_t)(w0 & 0xFF);
+            if (op == 0) break;                       // 終端
+            const uint32_t len = (uint32_t)(p[1] & 0x1F);
+
+            if (IsKeyOp(op))
+            {
+                ++out.ops;
+                char nm[5] = {};
+                if (dat.InRange(ip + 8, 4)) memcpy(nm, p + 8, 4);
+                const DatChunk* kc = dat.Find(nm, 0x19);
+                if (kc != nullptr && kc->size > 0x18) ++out.resolved;
+            }
+
+            if (len == 0) break;
+            ip += len * 4;
+        }
+    }
+    out.unresolved = out.ops - out.resolved;
+    return out;
 }
 

@@ -384,14 +384,28 @@ bool EffectContext::BuildFromChunk(const DatFile& dat, const char* chunk4)
 //    （2026-11-09 解析: 1,848 チャンク中 1,806（97.7%）が +0x50 から正常終端）
 //======================================================================
 
-bool EffectContext::BuildInternal(const DatFile& dat, const char* mainChunkName)
+//======================================================================
+//  索引のクリア（問題 3）
+//    再構築（Build / BuildFromChunk）で消し忘れると、テクスチャ番号が
+//    m_Textures とずれて誤ったテクスチャ（または白）になる。
+//    「テクスチャ索引系」は必ずこの 1 か所でまとめてクリアする。
+//======================================================================
+void EffectContext::ClearIndex()
 {
-    m_Dat = &dat;
     m_Timeline.clear();
     m_Generators.clear();
     m_Textures.clear();
     m_TexNames.clear();
+    m_TexSpecific.clear();      // ← 以前はクリア漏れ（m_TexNames とずれていた）
     m_Instances.clear();
+    m_Subs.clear();             // 入れ子 Schedule も旧 DAT を指したままにしない
+    m_MissingGenerators = 0;
+}
+
+bool EffectContext::BuildInternal(const DatFile& dat, const char* mainChunkName)
+{
+    m_Dat = &dat;
+    ClearIndex();
     m_Duration = 0.0f;
     m_ProgStart = 0;
 
@@ -658,14 +672,18 @@ void EffectContext::Advance(float dt)
         mi.Eval(*this, sdt);
     }
 
-    // 寿命切れを除去（表示用の簡略化）
+    // 寿命切れを除去（問題 4: 期限切れがあるときだけ詰める。毎フレームの深コピーを避ける）
     if (!m_Instances.empty())
     {
-        std::vector<MotionInstance> alive;
-        alive.reserve(m_Instances.size());
-        for (const MotionInstance& mi : m_Instances)
-            if (!mi.expired) alive.push_back(mi);
-        m_Instances.swap(alive);
+        const bool anyExpired =
+            std::any_of(m_Instances.begin(), m_Instances.end(),
+                        [](const MotionInstance& mi) { return mi.expired; });
+        if (anyExpired)
+        {
+            m_Instances.erase(std::remove_if(m_Instances.begin(), m_Instances.end(),
+                                             [](const MotionInstance& mi) { return mi.expired; }),
+                              m_Instances.end());
+        }
     }
 
     ++m_Frame;
@@ -778,7 +796,17 @@ void EffectContext::ExecSub(SubTimeline& s, const TimelineInst& in)
 void EffectContext::Spawn(const char* name4, float startSec, int op)
 {
     const GeneratorBlock* g = FindGenerator(name4);
-    if (g == nullptr) return;
+    if (g == nullptr)
+    {
+        // 問題 6: 黙って return すると「表示が消えるだけ」で原因が分からない。
+        //   ベース DAT へのフォールバックは未実装（設計判断 D-8）なので、
+        //   少なくとも未解決であることをログに残す。
+        EffectLogLine("[spawn] generator not found: %s (dat=%s op=0x%02X)",
+                      (name4 != nullptr) ? name4 : "(null)",
+                      (m_Dat != nullptr) ? m_Dat->Path().c_str() : "(none)", op & 0xFF);
+        ++m_MissingGenerators;
+        return;
+    }
 
     MotionInstance mi;
     // テクスチャ解決: 0x21 の specific 名（あれば）→ +0xAC のリンク名 の順

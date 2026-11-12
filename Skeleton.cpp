@@ -239,7 +239,14 @@ void Skeleton::EvalBone(int i, float pct)
             }
         }
 
-        for (int c = 0; c < 4; ++c) q[c] = ks[k0].q[c] + (ks[k1].q[c] - ks[k0].q[c]) * f;
+        // 問題 10: クォータニオンの内積が負なら片方を反転してから補間する。
+        //   反転しないと 180° を超える区間で「遠回り」の回転になる（nlerp の定石）。
+        float dq = 0.0f;
+        for (int c = 0; c < 4; ++c) dq += ks[k0].q[c] * ks[k1].q[c];
+        const float sg = (dq < 0.0f) ? -1.0f : 1.0f;
+
+        for (int c = 0; c < 4; ++c)
+            q[c] = ks[k0].q[c] + (sg * ks[k1].q[c] - ks[k0].q[c]) * f;
         for (int c = 0; c < 3; ++c)
         {
             t[c] = ks[k0].t[c] + (ks[k1].t[c] - ks[k0].t[c]) * f;

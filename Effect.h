@@ -35,6 +35,7 @@ enum : uint32_t
     SUB_ID2     = 0x104,   // u32                    (param_2[0x41])
     SUB_DEST    = 0x108,   // float[N] VM#1 出力スロット（vtable の dest インデックス）
     SUB_DEST_N  = 64,      // 出力スロット数（十分な余裕）
+    SUB_FLOAT_N = (SUB_DEST + SUB_DEST_N * 4) / 4,   // f[] の要素数（= 130）
 };
 
 //----------------------------------------------------------------------
@@ -42,7 +43,10 @@ enum : uint32_t
 //----------------------------------------------------------------------
 struct SubObject
 {
-    float f[(SUB_DEST + SUB_DEST_N * 4) / 4];
+    // VM が dest に書くのは最大 3 float（色 0x16 は Color() を直接使う）。
+    // それでも境界判定は `dest + 4 <= SUB_DEST_N` で行う（4 成分書込みが
+    // 将来入っても溢れないため）。有効な dest は 0..60。
+    float f[SUB_FLOAT_N];
 
     void Clear()
     {
@@ -68,6 +72,14 @@ struct SubObject
     const float& Elapsed() const { return f[SUB_ELAPSED / 4]; }
     const float& T01()     const { return f[SUB_T01 / 4]; }
 };
+
+// f[] の大きさと出力スロット数の整合（問題 5 の再発防止）
+//   dest の判定は `dest + 4 <= SUB_DEST_N`（= dest <= SUB_DEST_N - 4）。
+//   その最大 dest に 3 float を書いても f[] の末尾を越えないことを保証する。
+static_assert(SUB_FLOAT_N * 4 == SUB_DEST + SUB_DEST_N * 4,
+              "SubObject::f のバイト数と SUB_DEST_N が不整合");
+static_assert(SUB_FLOAT_N >= (SUB_DEST / 4) + (SUB_DEST_N - 4) + 3,
+              "dest の上限で書く 3 float が f[] に収まらない");
 
 //----------------------------------------------------------------------
 // タイムライン命令（main ブロック）
@@ -159,9 +171,13 @@ struct SubUnit
     int       frameIdx      = 0;                          // 現在のフレーム番号
     float     quadHalf[2]   = { 0.0f, 0.0f };             // 0x21 クワッドの半幅・半高
     float     quadCenter[2] = { 0.0f, 0.0f };             // 同・中心オフセット
-    // キーフレーム表のオフセット（VM#1 の 0x21..0x2F / 0x33..0x36 / 0x59..0x5B が設定）
-    //   AltanaView の particle[dest+0x43] に相当（0 = 未設定）
-    uint32_t  keyOff[SUB_DEST_N] = {};
+    // キーフレーム表の参照（VM#1 の 0x21..0x2F / 0x33..0x36 / 0x59..0x5B が設定）
+    //   AltanaView の particle[dest+0x43] に相当。
+    //   **命令の第 3 dword はオフセットではなく 0x19 チャンク名**（"k006" 等）なので、
+    //   スポーン時（VM#1）に名前解決し「表の先頭オフセット + 件数」で保持する。
+    //   keyCount == 0 は未解決。VM#2 はその場合スロットを書かない（0 で上書きしない）。
+    uint32_t  keyFirst[SUB_DEST_N] = {};   // 0x19 のチャンク先頭 + 0x18（[time,value] の先頭）
+    uint8_t   keyCount[SUB_DEST_N] = {};   // エントリ数（0..64）
 };
 
 //----------------------------------------------------------------------
@@ -209,6 +225,16 @@ void EffectSetEmitRate(int n);
 struct OpCount { int op; int count; };
 void EffectOpStatReset();
 std::vector<OpCount> EffectOpStat(int vm);
+
+// VM#1 のキー表参照（0x19 名）の解決監査（--selftest / 問題 1 の検証）
+//   ops      : VM#1 のキー op の総数
+//   resolved : 0x19 チャンク名として解決できた数
+//   unresolved: 解決できなかった数（== ops - resolved）
+struct KeyAudit { int ops = 0; int resolved = 0; int unresolved = 0; };
+KeyAudit EffectKeyAudit(const DatFile& dat, const std::vector<GeneratorBlock>& gens);
+
+// Effect.cpp からログを出すための窓口（実体は App.cpp の Log() へ転送）
+void EffectLogLine(const char* fmt, ...);
 
 //----------------------------------------------------------------------
 // エフェクトコンテキスト（AltanaView の EffectRoot 相当）
@@ -288,6 +314,11 @@ public:
     int FindTextureIndexByGroup(const char* name8) const;      // 0x1F の先頭 8 文字（グループ）→ 0x20
     void SetBaseTexture(const class EffectBase* base) { m_Base = base; }  // base の 0x20 を借用する
     size_t SubTimelineCount() const { return m_Subs.size(); }
+    // テクスチャ索引の整合検査用（--selftest）。0x20 の数と specific 名の数は一致する
+    size_t TexNameCount()     const { return m_TexNames.size(); }
+    size_t TexSpecificCount() const { return m_TexSpecific.size(); }
+    // generator 名が解決できなかった回数（問題 6 の診断用。--selftest が出力）
+    int     MissingGenerators() const { return m_MissingGenerators; }
     ID3D11ShaderResourceView* TextureSrv(int index) const;
 
 private:
@@ -306,7 +337,8 @@ private:
     bool ParseTimeline(const DatChunk& c, std::vector<TimelineInst>* out) const;
     void Spawn(const char* name4, float startSec, int op);
     bool BuildInternal(const DatFile& dat, const char* mainChunkName);
-
+    // テクスチャ索引系の配列をまとめてクリアする（問題 3: クリア漏れの再発防止）
+    void ClearIndex();
     std::vector<SubTimeline>    m_Subs;
 
     const DatFile*              m_Dat = nullptr;
@@ -336,6 +368,7 @@ private:
     bool     m_Emit         = true;     // 連続放出モデル（--emit on/off）
     bool     m_LifeData     = false;    // 粒子寿命をデータから（--life on）
     bool     m_QuadSize     = false;    // 0x21 クワッド寸法で描く（--size quad）
+    int      m_MissingGenerators = 0;   // Spawn で generator 名を解決できなかった回数
 
     TimTexture m_WhiteTex;
 };
