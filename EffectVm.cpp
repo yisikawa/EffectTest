@@ -64,12 +64,39 @@ namespace
 
     bool g_EmitMode = true;
     int  g_EmitRate = 24;          // 既定の放出レート（個/秒）。--emitrate で変更
+    bool g_Ring     = true;        // 0x06/0x1F を円周上配置にする（--ring on/off）
+    bool g_RingDist = false;       // 0x1F の半径に arg7（-0.4..-0.8 の絶対値）を使う
+                                   //   （--ringradius dist。既定 xy = arg0/arg1）
+    float g_RingScale = 1.0f;      // 円周半径の倍率（--ringscale N。データの 0.1..0.5 m は
+                                   //   ビルボード 2..4 m より小さく、既定では画像に現れない）
     int  g_OpStat[3][256] = {};    // [vm][op] の実行回数（--opstat）
+
+    //------------------------------------------------------------------
+    // 円周（楕円）上への配置（--ring on の既定。0x06 / 0x1F が使う）
+    //   AltanaView の 0x06 / 0x07 / 0x1F は「円運動＋乱数位相」
+    //   （docs/ANALYSIS-AltanaView-Draw.md §10.6c, thunk_0042e1b8 系）。
+    //   引数 (rX, rY) を XY 平面の半径として、位相だけを乱数にする。
+    //     → 粒子は「円周上」に並ぶ（半径は全粒子で一定）
+    //   旧実装（--ring off）は 0x06 を球面乱数として扱っていたため、
+    //   半径がばらつき「塊（中詰まり）」に見えていた。
+    //------------------------------------------------------------------
+    inline void PlaceOnRing(SubObject& sub, float rX, float rY)
+    {
+        const float phi = Rand01() * 6.283185307179586f;
+        float* p = sub.Pos();
+        p[0] += cosf(phi) * rX * g_RingScale;
+        p[1] += sinf(phi) * rY * g_RingScale;
+    }
 }
 
 void EffectSetEmitMode(bool on) { g_EmitMode = on; }
 bool EffectEmitMode() { return g_EmitMode; }
 void EffectSetEmitRate(int n) { g_EmitRate = (n > 0) ? n : 1; }
+void EffectSetRing(bool on) { g_Ring = on; }
+bool EffectRing() { return g_Ring; }
+void EffectSetRingScale(float s) { g_RingScale = (s > 0.0f) ? s : 1.0f; }
+void EffectSetRingDist(bool on) { g_RingDist = on; }
+bool EffectRingDist() { return g_RingDist; }
 
 void EffectOpStatReset()
 {
@@ -194,14 +221,21 @@ static void Vm1(const MotionInstance& mi, SubUnit& su, const EffectContext& ctx)
             break;
         }
 
-        //--- 球面ランダムオフセット（実測 FUN_0040e650 op 0x06 / 0x40E9B0-0x40EA00）
-        //   mag   = arg1 + arg0 * (rand / 65536)
-        //   phi   = rand * (2π/65536)      ← 0x452C70 = 1.462918119976564e-09
-        //   theta = rand * (π/65536) − π/2 ← 0x452C68 = 7.3145905998828198e-10, 0x452C60 = π/2
-        //   pos += (cosθ·cosφ, sinθ, cosθ·sinφ) * mag
-        //   ※ 生成時（VM#1）に 1 回だけ走るので、粒子ごとの初期位置のばらつきになる
+        //--- 生成位置のばらつき（実測 FUN_0040e650 op 0x06 / 0x40E9B0-0x40EA00）
+        //   AltanaView の 0x06/0x07/0x1F は「円運動＋乱数位相」。
+        //   引数 (arg0, arg1) を XY 平面の楕円半径とし、位相だけ乱数にする
+        //   → 粒子は**円周上**に配置される（半径は全粒子で一定）。
+        //   --ring off では旧実装（球面乱数）を残す（A/B 用）。
+        //     旧: mag = arg1 + arg0*rand / phi = rand*2π / theta = rand*π − π/2
+        //         pos += (cosθcosφ, sinθ, cosθsinφ) * mag
         case 0x06:
         {
+            if (g_Ring)
+            {
+                PlaceOnRing(su.sub, arg[0], arg[1]);
+                break;
+            }
+
             static const float kPi = 3.14159265358979f;
             const float mag   = arg[1] + arg[0] * Rand01();
             const float phi   = Rand01() * 2.0f * kPi;
@@ -211,6 +245,25 @@ static void Vm1(const MotionInstance& mi, SubUnit& su, const EffectContext& ctx)
             t[0] += ct * cosf(phi) * mag;
             t[1] += st * mag;
             t[2] += ct * sinf(phi) * mag;
+            break;
+        }
+
+        //--- 円運動（実測: 引数 11 個のうち先頭 2 個が楕円半径。
+        //      例 11\17 g002 = (0.2, 0.2, 1, 1, 1, 0, 0, -0.8, 1.5, 0, 0)）
+        //   VM#1 は生成時に 1 回だけ走るので、ここでは「円周上の初期位置」を与える。
+        //   残りの引数（arg7 の負値 -0.4..-0.8、arg8 の 0.8..1.5）は未確定。
+        case 0x1F:
+        {
+            if (g_Ring)
+            {
+                // arg7 は -0.4..-0.8（全 generator で一定）で、半径の候補。
+                //   --ringradius dist でこちらを使う（既定は arg0/arg1）。
+                const float d = (InstLen(p) >= 8) ? fabsf(arg[7]) : 0.0f;
+                if (g_RingDist && d > 1e-6f)
+                    PlaceOnRing(su.sub, d, d);
+                else
+                    PlaceOnRing(su.sub, arg[0], arg[1]);
+            }
             break;
         }
 

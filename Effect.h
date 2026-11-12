@@ -221,6 +221,15 @@ void EffectSetEmitMode(bool on);
 bool EffectEmitMode();
 void EffectSetEmitRate(int n);
 
+// 0x06 / 0x1F の初期配置を「円周上（楕円）」にする（--ring）。既定 on
+//   ringscale は円周半径の倍率（既定 1.0 = データ値のまま）
+void EffectSetRing(bool on);
+bool EffectRing();
+void EffectSetRingScale(float s);
+// 0x1F の半径に arg7（|−0.4..−0.8|）を使う（--ringradius dist）
+void EffectSetRingDist(bool on);
+bool EffectRingDist();
+
 // 実行された VM op の集計（--opstat）。vm=1: VM#1 / vm=2: VM#2
 struct OpCount { int op; int count; };
 void EffectOpStatReset();

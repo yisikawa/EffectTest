@@ -1760,6 +1760,39 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
                 continue;
             }
 
+            // 粒子の初期配置（0x06 / 0x1F）を円周上にするかの A/B。既定 on
+            if (_stricmp(tok, "--ring") == 0)
+            {
+                char mode[MAX_PATH] = {};
+                if (!NextToken(p, mode, MAX_PATH)) return 2;
+                if      (_stricmp(mode, "on")  == 0) EffectSetRing(true);
+                else if (_stricmp(mode, "off") == 0) EffectSetRing(false);
+                else { Log("[shot] unknown ring: %s", mode); return 2; }
+                continue;
+            }
+
+            // 円周半径の出どころ（0x1F）。xy = arg0/arg1（既定） / dist = |arg7|
+            if (_stricmp(tok, "--ringradius") == 0)
+            {
+                char mode[MAX_PATH] = {};
+                if (!NextToken(p, mode, MAX_PATH)) return 2;
+                if      (_stricmp(mode, "xy")   == 0) EffectSetRingDist(false);
+                else if (_stricmp(mode, "dist") == 0) EffectSetRingDist(true);
+                else { Log("[shot] unknown ringradius: %s", mode); return 2; }
+                continue;
+            }
+
+            // 円周半径の倍率（データの 0.1..0.5 m はビルボードより小さいため、確認用）
+            if (_stricmp(tok, "--ringscale") == 0)
+            {
+                char num[MAX_PATH] = {};
+                if (!NextToken(p, num, MAX_PATH)) return 2;
+                const double f = atof(num);
+                if (f > 0.0) EffectSetRingScale((float)f);
+                Log("[shot] ringscale=%.3f ring=%d", (float)f, EffectRing() ? 1 : 0);
+                continue;
+            }
+
             // 色/α の代替処理（RGB=0→白 / α≤0→1）の A/B（問題 7）。既定 on
             if (_stricmp(tok, "--colorfallback") == 0)
             {
