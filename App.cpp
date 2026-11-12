@@ -1760,6 +1760,33 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
                 continue;
             }
 
+            // カメラ（参照動画の AltanaView.ini の値を再現するため）
+            if (_stricmp(tok, "--dist") == 0)
+            {
+                char num[MAX_PATH] = {};
+                if (!NextToken(p, num, MAX_PATH)) return 2;
+                const double f = atof(num);
+                if (f > 0.01) g_Dist = (float)f;
+                Log("[shot] dist=%.3f", g_Dist);
+                continue;
+            }
+            if (_stricmp(tok, "--yaw") == 0)
+            {
+                char num[MAX_PATH] = {};
+                if (!NextToken(p, num, MAX_PATH)) return 2;
+                g_Yaw = (float)atof(num);
+                Log("[shot] yaw=%.4f", g_Yaw);
+                continue;
+            }
+            if (_stricmp(tok, "--pitch") == 0)
+            {
+                char num[MAX_PATH] = {};
+                if (!NextToken(p, num, MAX_PATH)) return 2;
+                g_Pitch = (float)atof(num);
+                Log("[shot] pitch=%.4f", g_Pitch);
+                continue;
+            }
+
             // 粒子の初期配置（0x06 / 0x1F）を円周上にするかの A/B。既定 on
             if (_stricmp(tok, "--ring") == 0)
             {
