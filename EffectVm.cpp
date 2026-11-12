@@ -360,27 +360,27 @@ static void Vm1(const MotionInstance& mi, SubUnit& su, const EffectContext& ctx)
             const float vx0 = arg[2], vy0 = arg[3], vz0 = arg[4];
             if (fabsf(vx0) + fabsf(vy0) + fabsf(vz0) < 1e-6f) break;
 
-            // 位相（dest 値はスカラー倍率）
-            const float phase = (d != nullptr) ? (d[0] * (1.0f / 65536.0f)) : 0.0f;
+            // 位相（実測 FUN_0040e650 case 0x1F の実アセンブリ）
+            //   A = rand × arg0 × 1/65536 + arg1     （※ arg0 であって dest 値ではない）
+            const float phase = arg[0] * (1.0f / 65536.0f) * Rand01() + arg[1];
 
-            // 2 番目の角度: [arg7-arg8, arg7+arg8]
-            const float theta = arg[7] + arg[8] * (Rand01() * 2.0f - 1.0f);
+            // 仰角 C = arg7 ± arg8
+            const float theC = arg[7] + arg[8] * (Rand01() * 2.0f - 1.0f);
 
-            // 方位: arg10 > 0 なら粒子番号で均等、そうでなければ乱数
-            float phi;
-            if (arg[9] > 0.5f && mi.emitTotal > 1)
-                phi = 6.283185307179586f * (float)(mi.emitSpawned % mi.emitTotal) / (float)mi.emitTotal;
+            // 方位 B: arg10 != 0 ならカウンタ/(arg10+1) で均等、そうでなければ乱数
+            float theB;
+            if (arg[10] > 0.5f)
+                theB = 6.283185307179586f * (float)(mi.emitSpawned % ((int)arg[10] + 1)) / ((float)arg[10] + 1.0f);
             else
-                phi = Rand01() * 6.283185307179586f;
-            phi += phase;
+                theB = Rand01() * 6.283185307179586f;
+            theB += phase;
 
-            // 球面方向（phase = 方位, theta = 仰角）を作り、振幅 |arg2..4| を掛ける
-            const float mag = sqrtf(vx0 * vx0 + vy0 * vy0 + vz0 * vz0);
-            const float cp = cosf(phi), sp2 = sinf(phi);
-            const float ct = cosf(theta), st = sinf(theta);
-            float x1 = ct * cp * mag;
-            float y1 = st * mag;
-            float z1 = ct * sp2 * mag;
+            // 実測: v = ( arg2·cosC·cosB, arg3·sinC, arg4·cosC·sinB )  ← 軸ごとの半径
+            const float cC = cosf(theC), sC = sinf(theC);
+            const float cB = cosf(theB), sB = sinf(theB);
+            float x1 = arg[2] * cC * cB;
+            float y1 = arg[3] * sC;
+            float z1 = arg[4] * cC * sB;
 
             // 実測: thunk_0042ed05 = RotZ(arg5)（row0 = cos,sin,0,0）、
             //       thunk_0042ec62 = RotY(arg6)（row0 = cos,0,-sin,0）の順に適用
