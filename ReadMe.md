@@ -288,7 +288,7 @@ next < 16 で終端 / pos += next
 | VM#2 `0x25`, `0x33/0x34-0x37/0x46`, `0x5F`, `0x29` | 未実装（IP 前進のみ） |
 | VM#2 `0x27/0x28`（UV オフセット） | 実装済み（`--uvscroll on\|cell` で描画に適用。既定 off） |
 | `0x1F`（`f101.m`）ジオメトリ | **実 3D 平行四辺形で描画**（`--geo on`。既定は off）。§下記参照 |
-| `0x19` / `0x3D` ブロック | 未使用（チャンク索引には載る） |
+| `0x19` ブロック | **キーフレーム表**（VM#1 のキー op が `"k006"` 等の名前で参照し、VM#2 `0x0F..0x21` が補間） |
 | `0x21`（テクスチャフレーム） | パース済み・既定で UV 適用（`frm=` / `uv=`。`--uv full` で無効化） |
 | タイムライン `0x05`（モデル生成） | 未実装（別 DAT の読み込みが必要） |
 | 描画の厳密な設定 | 加算合成 + Z 書き込みなしで**仮定**（AltanaView の実設定は未確認） |
@@ -333,6 +333,8 @@ next < 16 で終端 / pos += next
 
 ## 参考
 
+- **できること一覧（コード上の変更点）**: `docs/CAPABILITIES-2026-11-12.md`
+- **数値の正（ゴールデン）**: `docs/GOLDEN.md`（以下の測定値は当時の記録で、最新は GOLDEN.md）
 - 解析レポート: `D:\tools\AltanaView-master\_rea\EFFECT_MOTION_ANALYSIS.md`
 - 擬似C 抽出物: `%TEMP%\av_eff\*.c`
 - 参照実装: `D:\projects\ModelTest`（DAT 走査・TIM デコードの作法を踏襲）
@@ -406,12 +408,16 @@ AltanaView の `SetRenderState` を静的に走査すると、エフェクト描
   - 2026-11-12 修正: `g_UvScroll` が `bool` だったため `cell`(=2) が `on`(=1) に化けていた（C4305）。`int` 化して解消
 - 色/α の代替: `--shot --colorfallback on|off "<dat>" out.png`
   （`on` = RGB 全 0 → 白 / α≤0 → 1 の代替を適用（既定・従来挙動）。`off` = 代替せず VM の値をそのまま使う。A/B 用）
-- 粒子の初期配置: `--shot --ring on|off "<dat>" out.png`
-  （`on`（既定）= `0x06`/`0x1F` の引数を楕円半径として**円周上**に配置。`off` = 旧挙動（`0x06` 球面乱数 / `0x1F` no-op））
-  - `--ringradius xy|dist` : `0x1F` の半径の出どころ（`xy`=arg0/arg1 既定 / `dist`=|arg7|）
-  - `--ringscale N` : 円周半径の倍率（既定 1 = データ値）。データの半径 0.1〜0.7 m は
-    ビルボード（2〜4 m）より小さいため、見た目で確認するときは 2〜4 程度にする
+- 粒子の初期配置: `--shot --arrange ring|spiral|line "<dat>" out.png`
+  （`ring`（既定）= `0x06`/`0x1F` の引数を楕円半径として**円周に均等配置**（粒子番号の黄金角）。
+  `spiral` = らせん。`line` = 旧挙動（`0x06` 球面乱数 / `0x1F` no-op））
+  - `--ringplane xy|xz|yz` : 円周を張る面（既定 `xy`＝進行方向に垂直）
+  - `--ringscale N` : 半径の倍率（**既定 4**）。引数の半径 0.1〜0.5 m はサブ粒子スケールで
+    ビルボード（2〜4 m）より小さいため、1 のままだと円周が埋もれて直線に見える
+  - `--spiralturns N` : らせんの巻き数（既定 1）
+  - `--ringradius xy|dist` : `0x1F` の半径の出どころ（`dist` = `arg7` の絶対値 0.4〜0.8）
   - 形状の判定は `tools\RingStats.ps1`（`hollow < 1.0` で中抜け＝リング状）
+  - 比較画像: `docs\shots\2026-11-12-{line,ring,spiral}-11_17.png`
 - トレース: `--shot --trace "<dat>" out.png` → `effecttest_trace.csv`（列: `frame,instance,sub,name,elapsed,t01,px,py,pz,sx,sy,sz,r,g,b,a`。**サブ（粒子）単位**）
 - 時刻指定: `--shot --frames N "<dat>" out.png`（既定 90 = 1.5 s。1 フレーム = 1/60 s）
 - 骨格（GPU 不要）: `--skel "<model dat>" [motion4]`（骨数・モーション一覧・姿勢の変化をログ）
@@ -436,6 +442,9 @@ AltanaView の `SetRenderState` を静的に走査すると、エフェクト描
 | `11\18`（Fire II） | — | — | **3,098 / 576** |
 | `11\22`（Blizzard） | — | — | **5,686 / 247** |
 | `12\43`（Foe Requiem） | — | — | **3,628 / 257** |
+
+> **この表は 2026-11-09 時点の記録**（`--layout on --emit off` 系の条件を含む）。
+> 現在の既定条件のゴールデンは `docs/GOLDEN.md` を参照（2026-11-12 に再基準化）。
 
 > `--uv full`（`0x21` を使わない）では Fire 8,033 / 348、Fire II 2,396 / 570。
 > `--bg 40F0F0` で参照動画と同じシアン背景になり、そのまま見比べられる。

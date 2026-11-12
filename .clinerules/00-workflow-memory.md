@@ -30,10 +30,10 @@
 ## 現行ゴールデン（2026-11-09 時点・要更新時は本項を直す）
 ```
 --frames 90 / 既定（--layout off・--emit on・--geo off）
-  11\17 = 5,310 / 115    11\18 = 3,488 / 462
-  11\22 =   962 / 298    12\43 = 3,500 / 342
+  11\17 = 9,310 / 166    11\18 = 6,257 / 353
+  11\22 =   962 / 298    12\43 = 4,780 / 263
 旧挙動の再現: --layout on --emit off で 3,625 / 3,098 / 5,686 / 3,628
-  円周配置 off: --ring off で 5,023 / 129・3,053 / 465・3,615 / 244
+  直線配置（旧）: --arrange line で 5,023 / 129・3,053 / 465・3,615 / 244
 広域回帰: 11\0-11\19 / 12\0-12\19 = 40/40
 --selftest: keys unresolved=0（11\17=8/8, 11\18=9/9, 11\22=33/33, 12\43=10/10）
             texnames==texspecific / rebuild=ok
@@ -50,9 +50,11 @@
 | `--geo on\|off` | off | `0x1F` の 3D 形状を描画 |
 | `--opstat` | off | 実行 VM op を `effecttest_log.txt` に集計出力 |
 | `--colorfallback on\|off` | **on** | RGB=0→白 / α≤0→1 の代替（off で A/B。2026-11-12 追加） |
-| `--ring on\|off` | **on** | `0x06`/`0x1F` を円周上に配置（off で旧: 球面乱数 / no-op。2026-11-12 追加） |
-| `--ringradius xy\|dist` | xy | `0x1F` の半径（`dist` = \|arg7\|。2026-11-12 追加） |
-| `--ringscale N` | 1 | 円周半径の倍率（画像でリングを確認するとき 2〜4。2026-11-12 追加） |
+| `--arrange ring\|spiral\|line` | ring | `0x06`/`0x1F` の初期配置（均等円周 / らせん / 旧。2026-11-12） |
+| `--ringplane xy\|xz\|yz` | xy | 円周を張る面（2026-11-12） |
+| `--ringscale N` | **4** | 円周半径の倍率（引数の 0.1..0.5 m はビルボードより小さい） |
+| `--spiralturns N` | 1 | らせんの巻き数 |
+| `--ringradius xy\|dist` | xy | `0x1F` の半径（`dist` = `arg7` の絶対値） |
 
 ## 解析メモ（要点のみ・詳細は docs）
 - 逆コンパイル: `%TEMP%\AltanaViewRE_out_unpacked\04_decompiled.c`
@@ -69,7 +71,8 @@
   「円運動＋乱数位相」。先頭 2 引数を XY の楕円半径として `pos += (cosφ·rX, sinφ·rY)`。
   実測: `11\17` `g002` の `0x1F`(0.2,0.2) → r=0.190 / CV 0.158（旧 0.008 / 0.707）
 - 進捗の詳細: `docs/PROGRESS-2026-11-09.md`、解析: `docs/ANALYSIS-AltanaView-Draw.md`、
-  ゴールデン: `docs/GOLDEN.md`、レビュー対応: `docs/REVIEW-2026-11-10-Issues-And-Fixes.md`
+  ゴールデン: `docs/GOLDEN.md`、レビュー対応: `docs/REVIEW-2026-11-10-Issues-And-Fixes.md`、
+  **できること一覧: `docs/CAPABILITIES-2026-11-12.md`**
 
 ## 次にやること（2026-11-09 終了時点）
 1. `--dist/--yaw/--pitch` を CLI 化し、参照 `frames/v_0062.png` と同条件で A/B（縦横比 0.40±0.15 が目標）
