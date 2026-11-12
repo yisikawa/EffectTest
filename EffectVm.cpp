@@ -50,10 +50,13 @@ namespace
     }
 
     // キー補間（実測 FUN_0040f820 の移植・2026-11-12 逆コンパイルで確定）
-    //   カーソル（粒子ごと）を前進させ、**現在値 `out` を基準に**増分で寄せる:
-    //     out += (tNew - tOld) * (scale*value - out) / (keyTime - tOld)
-    //   → 絶対補間ではなく「キー時刻までの残り距離で按分する」形。
-    //   tOld == tNew のときは何もしない（= 元実装の早期 return）。
+    //   if (tOld == tNew || cursor 無効) → 何もしない
+    //   tNew <= 現在キー時刻:
+    //       out += (tNew - tOld) * (scale*keyValue - out) / (keyTime - tOld)   ← 現在値基準
+    //   tNew > 現在キー時刻:
+    //       カーソルを「次のキー時刻 >= tNew」まで前進し、通過した最後のキー値を base にして
+    //       out = (tNew - keyTimeBase) * (scale*keyValueNext - base) / (keyTimeNext - keyTimeBase) + base
+    //   ※ 元実装は「前進した場合はキー間の絶対補間、しなかった場合は現在値基準」という非対称。
     float EvalKeyTrackIncr(const DatFile& dat, uint32_t first, uint32_t count,
                            float tOld, float tNew, float scale,
                            uint32_t& cursor, float out)
@@ -64,28 +67,46 @@ namespace
         if (cursor >= count) cursor = count - 1;
 
         float kt = 0.0f, kv = 0.0f;
-        // カーソルを tNew 以下の最後のキーまで前進（元実装はポインタを進めるだけ）
-        while (cursor + 1u < count)
-        {
-            const uint32_t en = first + (cursor + 1u) * 8u;
-            if (!dat.InRange(en, 8)) break;
-            const uint8_t* qn = dat.At(en);
-            float tn = 0.0f, vn = 0.0f;
-            memcpy(&tn, qn, 4); memcpy(&vn, qn + 4, 4);
-            if (tNew < tn) break;
-            ++cursor;
-        }
         const uint32_t ec = first + cursor * 8u;
         if (!dat.InRange(ec, 8)) return out;
-        const uint8_t* q = dat.At(ec);
-        memcpy(&kt, q, 4);
-        memcpy(&kv, q + 4, 4);
+        {
+            const uint8_t* q = dat.At(ec);
+            memcpy(&kt, q, 4);
+            memcpy(&kv, q + 4, 4);
+        }
         if (kt < -1e6f || kt > 1e6f || kv < -1e12f || kv > 1e12f) return out;
 
-        const float keyVal = scale * kv;
-        const float denom  = kt - tOld;
-        if (fabsf(denom) < 1e-6f) return keyVal;
-        return out + (tNew - tOld) * (keyVal - out) / denom;
+        if (tNew > kt)
+        {
+            // 前進: 通過した最後のキー（base）を覚えつつ、次のキーまで進む
+            float baseT = kt, baseV = scale * kv;
+            while (cursor + 1u < count)
+            {
+                const uint32_t en = first + (cursor + 1u) * 8u;
+                if (!dat.InRange(en, 8)) break;
+                const uint8_t* qn = dat.At(en);
+                float tn = 0.0f, vn = 0.0f;
+                memcpy(&tn, qn, 4); memcpy(&vn, qn + 4, 4);
+                if (!(tNew > tn)) break;             // tNew <= 次キー時刻 で停止
+                ++cursor;
+                baseT = tn; baseV = scale * vn;
+            }
+            const uint32_t ec2 = first + cursor * 8u;
+            if (!dat.InRange(ec2, 8)) return out;
+            const uint8_t* q2 = dat.At(ec2);
+            float kt2 = 0.0f, kv2 = 0.0f;
+            memcpy(&kt2, q2, 4); memcpy(&kv2, q2 + 4, 4);
+            if (kt2 < -1e6f || kt2 > 1e6f || kv2 < -1e12f || kv2 > 1e12f) return out;
+
+            const float denom = kt2 - baseT;
+            if (fabsf(denom) < 1e-6f) return scale * kv2;
+            return baseV + (tNew - baseT) * (scale * kv2 - baseV) / denom;
+        }
+
+        // 前進なし: 現在値を基準に tOld→tNew の割合だけ寄せる
+        const float denom = kt - tOld;
+        if (fabsf(denom) < 1e-6f) return scale * kv;
+        return out + (tNew - tOld) * (scale * kv - out) / denom;
     }
 
     // VM#1 のキー表設定 op（実測 FUN_0040e0b0 L11030-11037）
@@ -104,9 +125,7 @@ namespace
     bool g_EmitMode = true;
     int  g_EmitRate = 24;          // 既定の放出レート（個/秒）。--emitrate で変更
     bool g_Ring     = true;        // 0x06/0x1F を円周上配置にする（--ring on/off）
-    bool g_KeyIncr  = false;       // キー補間を実測どおり「カーソル前進＋増分」で行う（--keymode incr）
-                                   //   ※ 逆コンパイルの解釈が未確定のため既定 off（abs）。incr は 11\18 で
-                                   //     hollow 2.04 -> 3.40 と悪化した（アセンブリで要確認）
+    bool g_KeyIncr  = true;        // キー補間を実測どおり「カーソル前進＋現在値基準」で行う（--keymode abs で旧方式）
     bool g_RingDist = false;       // 0x1F の半径に arg7（-0.4..-0.8 の絶対値）を使う
                                    //   （--ringradius dist。既定 xy = arg0/arg1）
     float g_RingScale = 4.0f;      // 円周半径の倍率（--ringscale N。既定 4）
@@ -197,9 +216,10 @@ std::vector<OpCount> EffectOpStat(int vm)
 static void Vm1(const MotionInstance& mi, SubUnit& su, const EffectContext& ctx)
 {
     // モデル従属モード（AltanaView の ctx+0x1a0 != 0）:
-    //   0x45/0x47/0x49 以外の op は実行されない。当方では位置は骨行列で与えるため、
-    //   VM#1 自体を省略する（Pos は 0 のまま → 骨の位置に描かれる）。
-    if (ctx.Attached()) return;
+    //   実測 FUN_0040e650 では「ctx+0x1a0 == 0 かつ (ctx+0x1a8 & 0x800000) == 0」のときだけ
+    //   ctx+0x60 の 16 dword（行列）を粒子へコピーする。**VM 自体は停止しない**。
+    //   （旧実装は here で return していたため、モデルを出すと効果が消えていた）
+    //   → 行列コピーは当方では行わない（骨行列を描画側で中心に適用）ので、何もしない。
 
     uint32_t ip = mi.gen->tblB;
 
