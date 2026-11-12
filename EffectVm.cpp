@@ -374,18 +374,30 @@ static void Vm1(const MotionInstance& mi, SubUnit& su, const EffectContext& ctx)
                 phi = Rand01() * 6.283185307179586f;
             phi += phase;
 
-            // Y 回転 → X 回転（thunk の順序に合わせる。要実測確認）
+            // 球面方向（phase = 方位, theta = 仰角）を作り、振幅 |arg2..4| を掛ける
+            const float mag = sqrtf(vx0 * vx0 + vy0 * vy0 + vz0 * vz0);
             const float cp = cosf(phi), sp2 = sinf(phi);
-            const float rx =  vx0 * cp + vz0 * sp2;
-            const float rz = -vx0 * sp2 + vz0 * cp;
             const float ct = cosf(theta), st = sinf(theta);
-            const float ry =  vy0 * ct - rz * st;
-            const float rz2 = vy0 * st + rz * ct;
+            float x1 = ct * cp * mag;
+            float y1 = st * mag;
+            float z1 = ct * sp2 * mag;
+
+            // 実測: thunk_0042ed05 = RotZ(arg5)（row0 = cos,sin,0,0）、
+            //       thunk_0042ec62 = RotY(arg6)（row0 = cos,0,-sin,0）の順に適用
+            const float cz = cosf(arg[5]), sz5 = sinf(arg[5]);
+            const float x2 = x1 * cz - y1 * sz5;
+            const float y2 = x1 * sz5 + y1 * cz;
+            const float z2 = z1;
+
+            const float cy = cosf(arg[6]), sy6 = sinf(arg[6]);
+            const float x3 =  x2 * cy + z2 * sy6;
+            const float y3 =  y2;
+            const float z3 = -x2 * sy6 + z2 * cy;
 
             float* pp = su.sub.Pos();
-            pp[0] += rx;
-            pp[1] += ry;
-            pp[2] += rz2;
+            pp[0] += x3;
+            pp[1] += y3;
+            pp[2] += z3;
             break;
         }
 
