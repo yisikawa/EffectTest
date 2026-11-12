@@ -55,10 +55,21 @@
 | `--ringscale N` | **4** | 円周半径の倍率（引数の 0.1..0.5 m はビルボードより小さい） |
 | `--spiralturns N` | 1 | らせんの巻き数 |
 | `--ringradius xy\|dist` | xy | `0x1F` の半径（`dist` = `arg7` の絶対値） |
+| `--dist N` / `--yaw R` / `--pitch R` | 14 / π / 0.35 | カメラ。参照の AltanaView.ini は **dist 2.785**（2026-11-12 追加） |
+| `--res WxH` | 1280x720 | 撮影解像度。参照の 3D ビューは **625x512**（2026-11-12 追加） |
+| `--gain N` | 1.5 | 色ゲイン（PS の ×1.5 を相殺。A/B 用） |
+| `--keymode incr\|abs` | incr | キー補間（incr = 実測どおり／abs = 旧） |
 
 ## 解析メモ（要点のみ・詳細は docs）
 - 逆コンパイル: `%TEMP%\AltanaViewRE_out_unpacked\04_decompiled.c`
   展開済み exe: `%TEMP%\av_unpack\AltanaView_unpacked.exe`（dist の exe は UPX 圧縮）
+- **AltanaView の起動条件**: `List` は**カレントディレクトリ**基準で解決される。
+  `D:\tool\AltanaView-master` 以外から起動すると `List folder "…\List" does not exist.` で停止する。
+  → 解析時は `Start-Process -WorkingDirectory 'D:\tool\AltanaView-master'` で起動し、
+  その後 Frida で **attach**（spawn は CWD を継承して失敗する）
+- **D3DX は静的リンク**（`d3dx9_*.dll` は読み込まれない）。`0x1F` の回転は
+  実行時 IAT `0x457084`=RotZ(`0x42ed2b`)、`0x457080`=RotY(`0x42ec88`)、
+  `0x45700c`=合成(`0x436695`)。**Z(arg5) → Y(arg6) の順**
 - **VM の役割**: VM#1（`FUN_0040e650`）= **粒子生成時に 1 回**、VM#2（`FUN_0040f4b0`）= 毎フレーム
 - 寿命は `ctx+0x1c8`（`(gen+0x20 >> 16)/60` 秒）。`LifeTime`（op01 +0x22）は未使用
 - 定数（`.rdata`）: `0x452C38`=1/65536、`0x452C50`=60、`0x452C54`=π、`0x452C58`=2π、
