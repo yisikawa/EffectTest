@@ -1,4 +1,4 @@
-﻿//======================================================================
+//======================================================================
 //  App.cpp : EffectTest 本体（Win32 + DX11）
 //
 //  AltanaView の effect motion（タイムライン + 2 段 VM）だけを可視化する。
@@ -32,8 +32,8 @@ using namespace DirectX;
 namespace
 {
     const wchar_t* kWndClass = L"EffectTestWindow";
-    const int      kInitW    = 1280;
-    const int      kInitH    = 720;
+    int            g_InitW   = 1280;   // 撮影解像度（--res WxH。参照の 3D ビューは 625x512）
+    int            g_InitH   = 720;
 
     HWND  g_hWnd    = nullptr;
     bool  g_Running = true;
@@ -1507,6 +1507,22 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
         return 0;
     }
 
+    // --res WxH: 参照（AltanaView の 3D ビュー = 625x512）に解像度を合わせる。
+    //   ウィンドウ生成より前に読む必要があるため、ここで先読みする。
+    if (lpCmdLine != nullptr)
+    {
+        const char* rp = strstr(lpCmdLine, "--res");
+        if (rp != nullptr)
+        {
+            int w = 0, h = 0;
+            if (sscanf_s(rp, "--res %dx%d", &w, &h) == 2 && w >= 64 && h >= 64 && w <= 4096 && h <= 4096)
+            {
+                g_InitW = w;
+                g_InitH = h;
+            }
+        }
+    }
+
     WNDCLASSEXW wc = {};
     wc.cbSize        = sizeof(wc);
     wc.style         = CS_HREDRAW | CS_VREDRAW;
@@ -1517,7 +1533,7 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
     wc.lpszClassName = kWndClass;
     if (RegisterClassExW(&wc) == 0) return 1;
 
-    RECT rc = { 0, 0, kInitW, kInitH };
+    RECT rc = { 0, 0, g_InitW, g_InitH };
     AdjustWindowRect(&rc, WS_OVERLAPPEDWINDOW, FALSE);
 
     g_hWnd = CreateWindowExW(WS_EX_ACCEPTFILES, kWndClass, L"EffectTest",
@@ -1531,7 +1547,7 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
 
     CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
 
-    if (!GfxInit(g_hWnd, kInitW, kInitH))
+    if (!GfxInit(g_hWnd, g_InitW, g_InitH))
     {
         MessageBoxW(g_hWnd, L"DirectX11 の初期化に失敗しました。", L"EffectTest", MB_ICONERROR);
         return 1;
@@ -1765,6 +1781,14 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
                 else if (_stricmp(mode, "on")   == 0) g_UvScroll = 1;   // 0..1 を巡回
                 else if (_stricmp(mode, "cell") == 0) g_UvScroll = 2;   // セル内を巡回
                 else { Log("[shot] unknown uvscroll: %s", mode); return 2; }
+                continue;
+            }
+
+            // 解像度（ウィンドウ生成前に先読み済み。ここでは値を読み飛ばすだけ）
+            if (_stricmp(tok, "--res") == 0)
+            {
+                char mode[MAX_PATH] = {};
+                if (!NextToken(p, mode, MAX_PATH)) return 2;
                 continue;
             }
 
@@ -2295,6 +2319,7 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
     CoUninitialize();
     return 0;
 }
+
 
 
 
