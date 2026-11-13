@@ -536,6 +536,26 @@ static void RenderScene(bool present)
                 center[1] += axR[1] * su.quadCenter[0] + axU[1] * su.quadCenter[1];
                 center[2] += axR[2] * su.quadCenter[0] + axU[2] * su.quadCenter[1];
             }
+            else if (g_SizeMode == 4)
+            {
+                // クワッド実寸 × VM の Scale（--size quadscale）
+                //   0x21 のローカル範囲は「テクスチャ 1 枚ぶんの実寸」で、倍率は
+                //   VM の Scale が担う。Cure 10/9 の prn は ±2 m × 0.1 = 0.2 m 角
+                //   となり、参照の星の大きさ（約 20〜40 px @ dist 2.785）と一致する。
+                if (su.quadHalf[0] > 0.0f && su.quadHalf[1] > 0.0f)
+                {
+                    halfW = g_SizeScale * su.quadHalf[0] * sx;
+                    halfH = g_SizeScale * su.quadHalf[1] * sy2;
+                    center[0] += axR[0] * su.quadCenter[0] * sx + axU[0] * su.quadCenter[1] * sy2;
+                    center[1] += axR[1] * su.quadCenter[0] * sx + axU[1] * su.quadCenter[1] * sy2;
+                    center[2] += axR[2] * su.quadCenter[0] * sx + axU[2] * su.quadCenter[1] * sy2;
+                }
+                else
+                {
+                    halfW = g_SizeScale * sx;
+                    halfH = g_SizeScale * sy2;
+                }
+            }
             else if (g_SizeMode == 2)
             {
                 // 正方形ビルボード（ワイヤーフレーム参照に合わせる）: scale[2] を両軸に使う
@@ -563,6 +583,25 @@ static void RenderScene(bool present)
 
             float axisR[3] = { axR[0] * halfW, axR[1] * halfW, axR[2] * halfW };
             float axisU[3] = { axU[0] * halfH,    axU[1] * halfH,    axU[2] * halfH };
+
+            // 面内回転（--spin on）: スピン角（SubObject 0xBC の Z 成分）で
+            //   クワッドを視線まわりに回す（ビルボードのロール）。
+            //   VM#1 0x3D/0x3E/0x40 と VM#2 0x29/0x2B が角度を積む。
+            if (EffectSpin())
+            {
+                const float* sp = su.sub.At(SUB_SPIN);
+                const float roll = sp[2];
+                if (roll != 0.0f)
+                {
+                    const float cr = cosf(roll), sr = sinf(roll);
+                    for (int a = 0; a < 3; ++a)
+                    {
+                        const float r0 = axisR[a], u0 = axisU[a];
+                        axisR[a] =  r0 * cr + u0 * sr;
+                        axisU[a] = -r0 * sr + u0 * cr;
+                    }
+                }
+            }
 
             // 0x1F のサブクワッド描画（--geo on）: 6 頂点ごとに 1 枚ずつ描く
             if (g_Effect.Geo() && mi.gen->hasGeo && !mi.gen->geoQuads.empty())
@@ -1645,6 +1684,7 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
                 else if (_stricmp(mode, "square") == 0) g_SizeMode = 2;
                 else if (_stricmp(mode, "meter")  == 0) g_SizeMode = 3;
                 else if (_stricmp(mode, "scale")  == 0) g_SizeMode = 0;
+                else if (_stricmp(mode, "quadscale") == 0) g_SizeMode = 4;
                 else { Log("[shot] unknown size: %s", mode); return 2; }
                 continue;
             }
@@ -1918,6 +1958,42 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
                 if      (_stricmp(mode, "on")  == 0) g_ColorFallback = true;
                 else if (_stricmp(mode, "off") == 0) g_ColorFallback = false;
                 else { Log("[shot] unknown colorfallback: %s", mode); return 2; }
+                continue;
+            }
+
+            // Move(0x8C) の位置積分（AltanaView の pos += move*dt）。既定 on
+            if (_stricmp(tok, "--moveint") == 0)
+            {
+                char mode[MAX_PATH] = {};
+                if (!NextToken(p, mode, MAX_PATH)) return 2;
+                if      (_stricmp(mode, "on")  == 0) EffectSetMoveInt(true);
+                else if (_stricmp(mode, "off") == 0) EffectSetMoveInt(false);
+                else { Log("[shot] unknown moveint: %s", mode); return 2; }
+                Log("[shot] moveint=%s", mode);
+                continue;
+            }
+
+            // 面内回転（VM#1 0x3D/0x3E/0x40, VM#2 0x29/0x2B）。既定 off
+            if (_stricmp(tok, "--spin") == 0)
+            {
+                char mode[MAX_PATH] = {};
+                if (!NextToken(p, mode, MAX_PATH)) return 2;
+                if      (_stricmp(mode, "on")  == 0) EffectSetSpin(true);
+                else if (_stricmp(mode, "off") == 0) EffectSetSpin(false);
+                else { Log("[shot] unknown spin: %s", mode); return 2; }
+                Log("[shot] spin=%s", mode);
+                continue;
+            }
+
+            // VM#1 0x3A の散布（意味未確定）。既定 off
+            if (_stricmp(tok, "--scatter") == 0)
+            {
+                char mode[MAX_PATH] = {};
+                if (!NextToken(p, mode, MAX_PATH)) return 2;
+                if      (_stricmp(mode, "on")  == 0) EffectSetScatter(true);
+                else if (_stricmp(mode, "off") == 0) EffectSetScatter(false);
+                else { Log("[shot] unknown scatter: %s", mode); return 2; }
+                Log("[shot] scatter=%s", mode);
                 continue;
             }
 

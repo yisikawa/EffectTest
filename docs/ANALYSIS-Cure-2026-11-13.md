@@ -157,7 +157,65 @@ Cure（`10/9`）で実際に走る op のうち、**我々に実装が無いも�
 
 ---
 
-## 6. 参考: Cure のデータ構造（`--selftest`）
+## 7. 実装結果（2026-11-13 追加）
+
+### 実装したもの（`feature/schedule`）
+
+| 追加 | 場所 | 既定 |
+|---|---|---|
+| `--moveint on\|off` — Move(0x8C) を `pos += move*dt` で積分 | `EffectVm.cpp` `MotionInstance::Eval` | **off** |
+| VM#1 `0x3B` — Move を X→Y→Z 順に固定角回転 | `EffectVm.cpp` Vm1 | 常時 |
+| VM#1 `0x3D`/`0x3E`/`0x40`、VM#2 `0x29`/`0x2B` — 面内回転（スピン） | `EffectVm.cpp` + `App.cpp`（ビルボードのロール） | `--spin` で on（既定 off） |
+| VM#1 `0x3A` — Move の散布（意味未確定） | `EffectVm.cpp` Vm1 | `--scatter` で on（既定 off） |
+| `--size quadscale` — クワッド実寸 × VM Scale | `App.cpp` | 明示指定のみ |
+
+### A/B（`--trace --frames 45`、Cure 10/9）
+
+| prn | `--moveint off` | `--moveint on` |
+|---|---|---|
+| prn0 x | 0.00（固定） | -0.01 〜 0.00 |
+| prn0 z | **0.00（固定）** | 0.02 〜 0.29 |
+| prn1 x | 0.00（固定） | 0.01 〜 0.29 |
+| prn1 z | **0.00（固定）** | **0.08 〜 1.26** |
+
+→ 仮説どおり **Move を積分すると x=z=0 の直線が解消**。
+`0x3B` の 100° 回転により prn1 は +Z 方向へ、prn0（80°）はより近くへ飛ぶ。
+`|Move|=2.4783 m/s × 寿命 0.167 s = 0.41 m` が 1 寿命あたりの移動量で、
+参照の星の距離（0.4〜1 m）と整合する。
+
+### 画像
+
+- `docs/shots/2026-11-13-cure-ft-moveint-on.png` / `-off.png`
+  （`--size meter --scale 0.25 --dist 2.785 --res 833x709 --blend alpha_add --gain 2 --colorfallback off`）
+- 位置は分離したが、**白い星はまだ出ない**。prn の α が 0.006〜0.09 と薄く、
+  加算合成でも白飛びしないため。kr11/kr12 は α0.5 で青い塊として出る。
+
+### 回帰
+
+`--moveint` 既定 off で従来値と一致（`--frames 90`、既定オプション）:
+
+| DAT | 変更後 | 参考（GOLDEN） |
+|---|---|---|
+| 11\17 | 9,310 / 171 | 9,310 / 166 |
+| 11\18 | 3,588 / 449 | 6,257 / 353（※既に旧値） |
+| 11\22 | 962 / 302 | 962 / 298 |
+| 12\43 | 4,764 / 263 | 4,780 / 263 |
+
+`--moveint on` にすると 11\17 は 17,094、11\22 は 2,501 へ変化するため、
+参照画像で裏付けが取れるまで既定 off とした。
+
+### 残り（次の段）
+
+1. **サイズ**: 0x21 が無い generator は `--size meter` の 1.0 m 固定になり、
+   prn の星が 1 m 角になって潰れる。`quadHalf` が 0 のときの基準寸法を決める必要がある
+2. **α / 色**: prn の α は 0.006〜0.09（AltanaView の頂点 α 1〜64/255 と同水準）。
+   AltanaView は α を ×4、RGB を ×2 して加算するため白飛びする。PS 側の実装が必要
+3. **個数**: 放出レート 24/s は 11\18 向けの暫定値。Cure の参照は星 10 個程度
+
+---
+
+## 8. 参考: Cure のデータ構造（`--selftest`）
+
 
 - size 16,592 B / chunks 29 / generators 8 / timeline 9 命令 / duration 3.3333 s
 - generator は全て type `0x05`（テクスチャフレーム）

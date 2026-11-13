@@ -135,6 +135,13 @@ namespace
     int   g_Arrange  = 1;          // 0=line（旧）/ 1=ring（円周・均等）/ 2=spiral（らせん）
     int   g_Plane    = 0;          // 0=xy / 1=xz / 2=yz（円周を張る面）
     float g_SpiralTurns = 1.0f;    // らせんの巻き数（--spiralturns）
+    bool  g_MoveInt  = false;      // Move(0x8C) を pos に積分する（--moveint）。既定 off
+                                   //   根拠は Cure 10/9 で確認済み（pos が散る）。
+                                   //   既存ゴールデン (11\17=9310 / 11\22=962 / 12\43=4764)
+                                   //   は on にすると大きく変わるため、参照画像で裏付けが
+                                   //   取れるまで既定 off（--moveint on で A/B）。
+    bool  g_Spin     = false;      // 面内回転 0x3D/0x3E/0x40・0x29/0x2B（--spin）。既定 off
+    bool  g_Scatter  = false;      // VM#1 0x3A の散布（--scatter）。既定 off（意味未確定）
     int  g_OpStat[3][256] = {};    // [vm][op] の実行回数（--opstat）
 
     //------------------------------------------------------------------
@@ -192,6 +199,13 @@ int  EffectArrange() { return g_Arrange; }
 void EffectSetRingPlane(int plane) { g_Plane = (plane >= 0 && plane <= 2) ? plane : 0; }
 int  EffectRingPlane() { return g_Plane; }
 void EffectSetSpiralTurns(float t) { g_SpiralTurns = (t > 0.0f) ? t : 1.0f; }
+void EffectSetMoveInt(bool on) { g_MoveInt = on; }
+bool EffectMoveInt() { return g_MoveInt; }
+void EffectSetSpin(bool on) { g_Spin = on; }
+bool EffectSpin() { return g_Spin; }
+void EffectSetScatter(bool on) { g_Scatter = on; }
+bool EffectScatter() { return g_Scatter; }
+
 
 void EffectOpStatReset()
 {
@@ -498,6 +512,92 @@ static void Vm1(const MotionInstance& mi, SubUnit& su, const EffectContext& ctx)
             if (d) { d[0] += arg[0]; d[1] += arg[1]; d[2] += arg[2]; }
             break;
 
+        //--- Move の固定回転（実測: Cure 10/9 の prn0/prn1 が該当）-------
+        //   prn1: Move=(-2.4783,0,0) に (0, 1.7453, 0)=100°、prn0 は 80°。
+        //   回転はベクトル長を保つ（2.4783 のまま）ので、生成ごとの向きだけが
+        //   変わる = 星が扇状に散る。適用順は 0x1F で確定した Z→Y に合わせ、
+        //   X→Y→Z の順で 1 回ずつ。
+        case 0x3B:
+        {
+            float* mv = su.sub.Move();
+            float x = mv[0], y = mv[1], z = mv[2];
+            if (arg[0] != 0.0f)                       // X
+            {
+                const float c = cosf(arg[0]), s = sinf(arg[0]);
+                const float y2 = y * c - z * s;
+                const float z2 = y * s + z * c;
+                y = y2; z = z2;
+            }
+            if (arg[1] != 0.0f)                       // Y
+            {
+                const float c = cosf(arg[1]), s = sinf(arg[1]);
+                const float x2 =  x * c + z * s;
+                const float z2 = -x * s + z * c;
+                x = x2; z = z2;
+            }
+            if (arg[2] != 0.0f)                       // Z
+            {
+                const float c = cosf(arg[2]), s = sinf(arg[2]);
+                const float x2 = x * c - y * s;
+                const float y2 = x * s + y * c;
+                x = x2; y = y2;
+            }
+            mv[0] = x; mv[1] = y; mv[2] = z;
+            break;
+        }
+
+        //--- 面内回転（スピン）-----------------------------------------
+        //   Cure 10/9 の kr10 にだけ 0x3D → 0x3E → 0x40 が並び、同じ kr10 の
+        //   VM#2 にだけ 0x29/0x2B が現れる（kr11/kr12 は両方なし）。
+        //   0x3D は引数なし（len=1）= 角度の 0 初期化、0x3E/0x40 は同じ
+        //   (0.04, 0.02) を持つ = 「初期角の乱数範囲」と「角速度の乱数範囲」。
+        //   意味が確定するまでは --spin on のときだけ作用させる。
+        case 0x3D:
+            if (g_Spin)
+            {
+                float* sp = su.sub.Spin();
+                float* sv = su.sub.SpinV();
+                sp[0] = sp[1] = sp[2] = 0.0f;
+                sv[0] = sv[1] = sv[2] = 0.0f;
+            }
+            break;
+        case 0x3E:                                    // 初期角（X, Z）
+            if (g_Spin)
+            {
+                float* sp = su.sub.Spin();
+                sp[0] += (Rand01() * 2.0f - 1.0f) * arg[0];
+                sp[2] += (Rand01() * 2.0f - 1.0f) * arg[1];
+            }
+            break;
+        case 0x40:                                    // 角速度（X, Z）
+            if (g_Spin)
+            {
+                float* sv = su.sub.SpinV();
+                sv[0] += (Rand01() * 2.0f - 1.0f) * arg[0];
+                sv[2] += (Rand01() * 2.0f - 1.0f) * arg[1];
+            }
+            break;
+
+        //--- Move の散布（意味未確定・--scatter on のときだけ）-----------
+        //   Cure 10/9 の prn0/prn1 が同一の 9 引数を持つ:
+        //     (1, 3.8, 6.4, 0, 0, -0, 0, FLT_MAX, 0)
+        //   3.8 / 6.4 rad は角度レンジ（217°..367°）と読めるため、Move を
+        //   その範囲の乱数角で Y 回転する。arg7 = FLT_MAX は「クランプ無し」の
+        //   歩哨とみなし、座標には一切足さない（発散の防止）。
+        case 0x3A:
+        {
+            if (!g_Scatter) break;
+            float* mv = su.sub.Move();
+            const float a0 = arg[1], a1 = arg[2];
+            if (a1 <= a0) break;
+            const float th = a0 + (a1 - a0) * Rand01();
+            const float c = cosf(th), s = sinf(th);
+            const float x =  mv[0] * c + mv[2] * s;
+            const float z = -mv[0] * s + mv[2] * c;
+            mv[0] = x; mv[2] = z;
+            break;
+        }
+
         default:
             break;                                // 未実装 op は無視
         }
@@ -652,6 +752,29 @@ static bool Vm2(const MotionInstance& mi, SubUnit& su, float dt, float rootDurat
             }
             break;
 
+        //--- 面内回転の積分 ---------------------------------------------
+        //   0x29 / 0x2B は 0x27/0x28 と同じ「op ごとの固定スロット」型。
+        //   Cure 10/9 の kr10 だけが持ち、引数は ±0.1222 rad（≈7°/frame）。
+        //   0x29 = 角度、0x2B = 角速度の積分として扱う（--spin on のみ）。
+        case 0x29:
+            if (g_Spin)
+            {
+                float* sp = su.sub.Spin();
+                sp[0] += k * arg[0];
+                sp[1] += k * arg[1];
+                sp[2] += k * arg[2];
+            }
+            break;
+        case 0x2B:
+            if (g_Spin)
+            {
+                float* sv = su.sub.SpinV();
+                sv[0] += k * arg[0];
+                sv[1] += k * arg[1];
+                sv[2] += k * arg[2];
+            }
+            break;
+
         default:
             break;
         }
@@ -756,7 +879,8 @@ void MotionInstance::Eval(const EffectContext& ctx, float dt)
         // 放出モードでは生成時に 1 回だけ回している。
         if (!emitMode) Vm1(*this, su, ctx);
 
-        if (Vm2(*this, su, dt, ctx.Duration(), ctx))
+        const bool subEnded = Vm2(*this, su, dt, ctx.Duration(), ctx);
+        if (subEnded)
         {
             ended = true;
             if (emitMode)
@@ -771,6 +895,21 @@ void MotionInstance::Eval(const EffectContext& ctx, float dt)
                     continue;                    // 寿命: 削除
                 }
             }
+        }
+        else if (g_MoveInt)
+        {
+            //----------------------------------------------------------
+            // Move(0x8C) = 速度 [m/s] を位置へ積分する（--moveint）
+            //   VM#1 0x09 が Move に速度ベクトルを書き、VM#2 0x05 が積む。
+            //   描画側は Pos しか読んでいなかったため Move が捨てられていた。
+            //   例: Cure 10/9 の prn1 は Move=(-2.4783,0,0) → 0x3B で 100° 回転
+            //       → 2.4783 m/s × 寿命 0.167 s = 0.41 m の位置に星が出る。
+            //----------------------------------------------------------
+            float* pp = su.sub.Pos();
+            const float* mv = su.sub.Move();
+            pp[0] += mv[0] * dt;
+            pp[1] += mv[1] * dt;
+            pp[2] += mv[2] * dt;
         }
 
         //----------------------------------------------------------

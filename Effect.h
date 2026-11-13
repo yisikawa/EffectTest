@@ -31,6 +31,8 @@ enum : uint32_t
     SUB_ELAPSED = 0x0EC,   // float 経過秒           (param_2[0x3b])
     SUB_T01     = 0x0F0,   // float 正規化時間 0..1  (param_2[0x3c])
     SUB_PREV    = 0x0F4,   // float[3] 前フレーム位置(param_2[0x3d..0x3f])
+    SUB_SPIN    = 0x0BC,   // float[3] 面内回転角（VM#1 0x3D/0x3E/0x40, VM#2 0x29/0x2B）
+    SUB_SPINV   = 0x0C8,   // float[3] 面内回転速度（同上）
     SUB_ROOT    = 0x100,   // u32 ルート逆参照       (param_2[0x40])
     SUB_ID2     = 0x104,   // u32                    (param_2[0x41])
     SUB_DEST    = 0x108,   // float[N] VM#1 出力スロット（vtable の dest インデックス）
@@ -66,6 +68,8 @@ struct SubObject
     float*       Move()  { return At(SUB_MOVE); }
     float*       Scale() { return At(SUB_SCALE); }
     float*       Color() { return At(SUB_COLOR); }
+    float*       Spin()  { return At(SUB_SPIN); }
+    float*       SpinV() { return At(SUB_SPINV); }
     float*       Dest(uint32_t i) { return At(SUB_DEST + i * 4); }
     float&       Elapsed() { return f[SUB_ELAPSED / 4]; }
     float&       T01()     { return f[SUB_T01 / 4]; }
@@ -239,6 +243,19 @@ int  EffectArrange();
 void EffectSetRingPlane(int plane);
 int  EffectRingPlane();
 void EffectSetSpiralTurns(float t);
+
+// Move(0x8C) を位置へ積分する（--moveint）。既定 on
+//   AltanaView は Move = 速度 [m/s] として pos += move*dt で動かす。
+//   当方の描画は Pos しか読んでおらず、Move が捨てられていた（Cure が
+//   x=z=0 の直線になる主因）。off で従来動作。
+void EffectSetMoveInt(bool on);
+bool EffectMoveInt();
+// 面内回転（VM#1 0x3D/0x3E/0x40 / VM#2 0x29/0x2B）の A/B（--spin）。既定 off
+void EffectSetSpin(bool on);
+bool EffectSpin();
+// VM#1 0x3A（Move の散布・意味未確定）の A/B（--scatter）。既定 off
+void EffectSetScatter(bool on);
+bool EffectScatter();
 
 // 実行された VM op の集計（--opstat）。vm=1: VM#1 / vm=2: VM#2
 struct OpCount { int op; int count; };
