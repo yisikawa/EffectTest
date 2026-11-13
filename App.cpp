@@ -1998,6 +1998,39 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
                 continue;
             }
 
+            // ffxitool5 実測に合わせた「参照モード」を一括適用
+            //   加算合成(SRCALPHA+ONE) / RGB×4 / キー補間 norm / サイズ=VM Scale /
+            //   Move 積分 / 0x1F の半径倍率 1
+            if (_stricmp(tok, "--ffxi") == 0)
+            {
+                char mode[MAX_PATH] = {};
+                if (!NextToken(p, mode, MAX_PATH)) return 2;
+                if (_stricmp(mode, "on") == 0)
+                {
+                    GfxSetBlendMode(GFX_BLEND_ALPHA_ADD);
+                    g_BlendAuto = false;
+                    g_Gain = 4.0f;
+                    g_SizeMode = 0;                 // --size scale
+                    EffectSetKeyMode(2);            // --keymode norm
+                    EffectSetMoveInt(true);         // --moveint on
+                    EffectSetRingScale(1.0f);       // --ringscale 1
+                    Log("[shot] ffxi=on (alpha_add/gain4/norm/scale/moveint/ringscale1)");
+                }
+                else if (_stricmp(mode, "off") == 0)
+                {
+                    GfxSetBlendMode(GFX_BLEND_ALPHA);
+                    g_BlendAuto = false;
+                    g_Gain = 1.5f;
+                    g_SizeMode = 3;
+                    EffectSetKeyMode(0);
+                    EffectSetMoveInt(false);
+                    EffectSetRingScale(4.0f);
+                    Log("[shot] ffxi=off");
+                }
+                else { Log("[shot] unknown ffxi: %s", mode); return 2; }
+                continue;
+            }
+
             if (_stricmp(tok, "--trace") == 0)
             {
                 // サブ（粒子）ごとの状態を CSV に出す（GUI の T キーと同じ形式）
