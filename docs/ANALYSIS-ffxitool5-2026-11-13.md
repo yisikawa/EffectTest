@@ -1,4 +1,10 @@
 # ffxitool5.exe（FFXITool5 エフェクトビュア）解析 — 2026-11-13
+> **重要（2026-11-13 追記）**: 本アプリは **Cure のノードの多くを未実装**で、
+> 画面に `Unknown. Doesn't work` と表示する。描画ステート・DAT 形式・キー補間の
+> **仕様の出典としては有効**だが、**見た目の正解としては使えない**
+> （Cure の見た目の参照は AltanaView）。詳細は §8。
+
+
 
 `D:\tool\ffxitool13032900\ffxitool5.exe`
 AltanaView（UPX + D3D9 + 巨大）より**はるかに解析が容易**な参照実装。
@@ -419,3 +425,33 @@ Start-Process 'D:\tool\ffxitool13032900\ffxitool5.exe' -WorkingDirectory 'D:\too
 ```
 
 スクリプト: `%TEMP%\av_cure\ffxitool_nav.ps1`
+
+## 8. 実機の表示（Cure 2801）— 本アプリは部分実装
+
+`FFXITool5 ケアル [2801] ROM\10\9.DAT` の画面（`docs/shots/2026-11-13-cure-ffxitool5-ref.png`）は
+左半分が**診断ログ**で、そこにこう出る:
+
+```
+kr1-1_1 type:1 Unknown. Doesn't work
+kr1-1_2 type:1 Unknown. Doesn't work
+kr1-1_3 type:0xE Unknown. Doesn't work
+pn1-1  type:1 Unknown. Doesn't work
+pn1-1  not found ID:ring 44 24 -- 16896.0
+pn1-2  type:2 Unknown. Doesn't work
+pn1-3  type:0x38 Unknown. Doesn't work
+pn1-3  type:0x3E Unknown. Doesn't work
+kr3-1_1 type:1 ... kr3-1_2 type:0xE ...
+```
+
+- **ノード種別（type）の大半が未対応**で、アプリ自身が `Doesn't work` と明示している
+- `not found ID: ring 44 24 -- 16896.0` = リンク名 `ring` と ID 44/24 の解決失敗
+- 実際に描かれるのは **白い星 1〜2 個と細い縦線、小さな点**のみ
+
+→ **ffxitool5 は「仕様の出典」としては優秀だが「見た目の正解」ではない。**
+   - 使える: ID→DAT、チャンク規則、main の 3 ストリーム、描画ステート、
+     キー補間、サイズ（VM Scale）、色のパック
+   - 使えない: Cure の見た目（未実装ノードが多い）
+
+**したがって見た目の参照は AltanaView のまま**（`main` 側の解析）。
+ffxitool5 で得た「加算 / RGB×4 / サイズ=Scale / キー=0..1 正規化 / 発生=間隔×寿命」は
+AltanaView の観測（白い四芒星・紫の光）と矛盾しないため、そのまま採用してよい。
