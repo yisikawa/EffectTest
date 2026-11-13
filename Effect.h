@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 //======================================================================
 //  Effect.h : エフェクト DAT モデル（タイムライン / ジェネレータ / サブオブジェクト）
 //
@@ -256,6 +256,8 @@ void EffectSetSpin(bool on);
 bool EffectSpin();
 // VM#1 0x3A（Move の散布・意味未確定）の A/B（--scatter）。既定 off
 void EffectSetScatter(bool on);
+void EffectSetBigGlowSingle(bool on);
+
 bool EffectScatter();
 
 // 実行された VM op の集計（--opstat）。vm=1: VM#1 / vm=2: VM#2

@@ -2014,6 +2014,7 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
                     EffectSetKeyMode(2);            // --keymode norm
                     EffectSetMoveInt(true);         // --moveint on
                     EffectSetRingScale(1.0f);       // --ringscale 1
+                    EffectSetBigGlowSingle(true);
                     Log("[shot] ffxi=on (alpha_add/gain4/norm/scale/moveint/ringscale1)");
                 }
                 else if (_stricmp(mode, "off") == 0)

@@ -192,6 +192,7 @@ namespace
                                    //   取れるまで既定 off（--moveint on で A/B）。
     bool  g_Spin     = false;      // 面内回転 0x3D/0x3E/0x40・0x29/0x2B（--spin）。既定 off
     bool  g_Scatter  = false;      // VM#1 0x3A の散布（--scatter）。既定 off（意味未確定）
+    bool  g_BigGlow  = false;      // Scale>=0.5 の大判粒子を 1 個だけ出す（--ffxi on で有効）
     int  g_OpStat[3][256] = {};    // [vm][op] の実行回数（--opstat）
 
     //------------------------------------------------------------------
@@ -255,6 +256,7 @@ bool EffectMoveInt() { return g_MoveInt; }
 void EffectSetSpin(bool on) { g_Spin = on; }
 bool EffectSpin() { return g_Spin; }
 void EffectSetScatter(bool on) { g_Scatter = on; }
+void EffectSetBigGlowSingle(bool on) { g_BigGlow = on; }
 bool EffectScatter() { return g_Scatter; }
 
 
@@ -921,6 +923,15 @@ void MotionInstance::Eval(const EffectContext& ctx, float dt)
                    subs.size() < 512u && guard++ < 256)
             {
                 SpawnSub(ctx, ctx.Geo());
+                // 大判粒子（Scale>=0.5）は 1 個だけ描く。
+                //   ffxitool5 のインスタンス数はデータ側（+0x41C の子）で決まり、
+                //   24/s で積むと画面全体が発光して飽和する（Cure III/IV で実測）。
+                if (g_BigGlow)
+                {
+                    const float* sc = subs.back().sub.Scale();
+                    if (sc[0] >= 0.5f || sc[1] >= 0.5f)
+                        emitInterval = (dur > 0.0f) ? dur : 1000.0f;
+                }
                 emitTimer += emitInterval;
             }
         }
