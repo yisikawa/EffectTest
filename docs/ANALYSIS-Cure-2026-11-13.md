@@ -283,6 +283,28 @@ incr 側の 0.006〜0.088 は「増分補間のドリフト」で出ていた値
 
 ---
 
+### 9.4 放出レートの目安（`--ffxi on`, frames 150, 833×709, dist 2.785）
+
+| `--emitrate` | nonBg | maxSum | 見た目 |
+|---|---|---|---|
+| 6 | 19,234 | 299 | 星が少なすぎる |
+| **12** | **21,952** | **356** | **参照に近い（星 12〜15 個・小さな楕円）** |
+| 24（既定） | 22,784 | 488 | 密で白飛び気味 |
+
+→ Cure の参照比較には `--ffxi on --emitrate 12` を推奨。既定 24 でも動作するが重なりが増える。
+
+### 9.5 参照と並べるときの推奨コマンド
+
+```
+EffectTest.exe --shot "<ROM>\10\9.DAT" cure.png --frames 150 --ffxi on --emitrate 12 \
+               --res 833x709 --dist 2.785
+```
+
+`--ffxi on` の中身（すべて ffxitool5 実測に基づく）:
+加算合成(SRCALPHA+ONE) / RGB×4 / `keymode norm` / `size = VM Scale` /
+`moveint on` / `ringscale 1`。
+
+
 ## 10. 参考: Cure のデータ構造（`--selftest`）
 
 
