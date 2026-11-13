@@ -241,10 +241,51 @@ AltanaView はステージを 2 段（×2 と ×4）に分けていたが、ffxi
 
 ## 5. `FUN_004050b0`（1 インスタンス描画）の構造
 
+### 5.1 毎フレームの値の決め方
+
 - 冒頭で行列スタックを組み立て、`thunk_FUN_0041154c` / `0x4114bc` / `0x410c10` /
   `0x4115dc` / `0x411678` / `0x411715` を呼ぶ（**自前の行列・回転ヘルパ**）。
-- 末尾で `(**(code**)(*DAT_0043f3c0 + 0x94))(...)` = **Clear**、
-  その後 `(**(code**)(*(this+0x102c) + 8))(...)` = Release 相当。
+- 粒子ごとに `this + 0x1488 .. +0x14d4` の**トラック表**と
+  `this + 0x2088 .. +0x20d4` の**値ポインタ**を見て、
+  `FUN_00403940(ptr, t)` で**時刻 t のキー値を評価**しローカルへ入れる。
+
+```c
+if (*(int*)(this+0x14b4) && *(float**)(this+0x20b4)) local_220 = FUN_00403940(...);
+if (*(int*)(this+0x14b8) && *(float**)(this+0x20b8)) local_224 = FUN_00403940(...);
+if (*(int*)(this+0x14bc) && *(float**)(this+0x20bc)) local_214 = FUN_00403940(...);
+fStack_208 = param_1[4];  fStack_210 = param_1[5];          // 基底値
+if (*(int*)(this+0x14c0) ...) fStack_208 = FUN_00403940(...);
+if (*(int*)(this+0x14c4) ...) fStack_210 = FUN_00403940(...);
+fStack_218 = param_1[7];  fStack_204 = param_1[8];  fStack_21c = param_1[9];
+if (*(int*)(this+0x14cc) ...) fStack_218 = ...;
+if (*(int*)(this+0x14d0) ...) fStack_204 = ...;
+if (*(int*)(this+0x14d4) ...) fStack_21c = ...;
+if (*(int*)(this+0x1488) && *(void**)(this+0x102c)) {
+    FUN_00402f20(*(void**)(this+0x102c), *(u32*)(*(int*)(this+0x1488)+4));  // テクスチャ/UV
+    FUN_00402e60(*(int*)(this+0x102c));                                     // バッファ確定
+}
+```
+
+- `FUN_00403940(track, t)` = **キーフレーム評価**（EffectTest の `EvalKeyTrack` に相当）。
+- `param_1` = インスタンス状態の配列。**`[4] [5]`** が第 1 群、
+  **`[7] [8] [9]`** が第 2 群（位置 xyz / 色 RGB のいずれか）。トラックがあれば上書き。
+
+### 5.2 ブレンドはインスタンスごとに切り替わる
+
+```c
+if ((uVar1 & 4) == 0)  SetRenderState(0x14 /*DESTBLEND*/, 2 /*ONE*/);          // 加算
+else                   SetRenderState(0x14 /*DESTBLEND*/, 6 /*INVSRCALPHA*/);  // α
+```
+
+→ **フラグの bit2（値 4）で「加算 / α」を選ぶ**。
+AltanaView の「テクスチャの黒割合で加算を自動判定」に相当する仕組みが、
+ffxitool5 では**明示フラグ**。EffectTest の `--blend auto`（blackRatio）はその近似として妥当。
+
+### 5.3 末尾
+
+`(**(code**)(*DAT_0043f3c0 + 0x94))(...)` = **Clear**、
+その後 `(**(code**)(*(this+0x102c) + 8))(...)` = Release 相当。
+
 
 
 ## 6. 次段（このアプリを優先して進める）
