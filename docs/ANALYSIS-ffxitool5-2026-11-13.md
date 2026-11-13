@@ -281,7 +281,39 @@ else                   SetRenderState(0x14 /*DESTBLEND*/, 6 /*INVSRCALPHA*/);  /
 AltanaView の「テクスチャの黒割合で加算を自動判定」に相当する仕組みが、
 ffxitool5 では**明示フラグ**。EffectTest の `--blend auto`（blackRatio）はその近似として妥当。
 
-### 5.3 末尾
+### 5.4 キーフレーム評価 `FUN_00403940`（0x403940）
+
+```c
+float FUN_00403940(float* p, float t)     // p = {t0,v0,t1,v1,...} 末尾に t==1.0
+{
+    if (t > 1.0f) t = 1.0f;  else if (t < 0.0f) t = 0.0f;   // 0..1 にクランプ
+    v = p[1];  cur = p[0];
+    while (cur != 1.0f) {                 // ★ 1.0 が終端マーカー
+        next_t = p[2];
+        if (t == cur) break;
+        if (cur <= t && t <= next_t)
+            return (t - cur) * (p[3] - p[1]) / (next_t - cur) + p[1];   // 線形補間
+        v = p[3];  p += 2;  cur = next_t;
+    }
+    return v;
+}
+```
+
+**EffectTest との違い（重要）**
+
+| 項目 | ffxitool5 | EffectTest 現行 |
+|---|---|---|
+| 表の形 | `{t,v}` の**平坦な配列**、**末尾に t=1.0 の終端** | 0x19 チャンクを `[time, value]` として直接読む |
+| 時間 | **0..1 に正規化**（クランプ） | `T01()` をそのまま使用 |
+| 補間 | **単純な線形**（毎フレーム、キー区間を探す） | カーソル前進＋現在値基準の増分補間（`EvalKeyTrackIncr`） |
+| キー数 | 終端マーカーまで走査 | `(size-0x18)/8` |
+
+→ ffxitool5 は **0x19 を「正規化済みの平坦配列」に前処理**してから線形補間する。
+EffectTest の「カーソル前進型」は ffxitool5 とは別方式なので、
+**α が 0 付近に張り付く現象（prn の 0.006〜0.09）はここで説明できる可能性が高い**。
+次段で「0x19 → 平坦配列＋終端 1.0」への変換関数を特定し、比較する。
+
+### 5.5 末尾
 
 `(**(code**)(*DAT_0043f3c0 + 0x94))(...)` = **Clear**、
 その後 `(**(code**)(*(this+0x102c) + 8))(...)` = Release 相当。
