@@ -2015,6 +2015,7 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
                     EffectSetMoveInt(true);         // --moveint on
                     EffectSetRingScale(1.0f);       // --ringscale 1
                     EffectSetBigGlowSingle(true);
+                    EffectSetEmitRate(0);           // データ駆動（1 周期に 1 個）
                     Log("[shot] ffxi=on (alpha_add/gain4/norm/scale/moveint/ringscale1)");
                 }
                 else if (_stricmp(mode, "off") == 0)

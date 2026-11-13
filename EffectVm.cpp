@@ -233,7 +233,7 @@ namespace
 
 void EffectSetEmitMode(bool on) { g_EmitMode = on; }
 bool EffectEmitMode() { return g_EmitMode; }
-void EffectSetEmitRate(int n) { g_EmitRate = (n > 0) ? n : 1; }
+void EffectSetEmitRate(int n) { g_EmitRate = (n >= 0) ? n : 1; }
 void EffectSetRing(bool on) { g_Ring = on; g_Arrange = on ? 1 : 0; }
 bool EffectRing() { return g_Ring; }
 void EffectSetRingScale(float s) { g_RingScale = (s > 0.0f) ? s : 1.0f; }
@@ -910,9 +910,23 @@ void MotionInstance::Eval(const EffectContext& ctx, float dt)
             // データの +0x78 は 0 のことが多い（実測: 11\18 の全 generator）ため、
             // 粒子数が 1 のときはレート（既定 24 個/秒）で放出する。
             //   → 寿命のあいだ粒子が積み上がり、参照のような「柱」になる
-            const float rate = (emitTotal > 1) ? ((float)emitTotal / dur) : (float)g_EmitRate;
-            emitInterval = 1.0f / ((rate > 0.0f) ? rate : 1.0f);
-            if (emitInterval <= 0.0f) emitInterval = 1.0f / 60.0f;
+            // データ駆動の発生間隔（--emitrate 0）
+            //   個体数はデータに無い。決められた間隔で発生し、寿命で消える。
+            //   1 周期（generator の長さ）に 1 個発生させると、
+            //   同時に存在する数 = 寿命/間隔 = 1 個/ジェネレータ になる。
+            if (g_EmitRate <= 0)
+            {
+                const float gl = (gen->Length() > 0.0f) ? gen->Length() : (1.0f / 60.0f);
+                const float rate = (emitTotal > 1) ? ((float)emitTotal / gl) : (1.0f / gl);
+                emitInterval = 1.0f / ((rate > 0.0f) ? rate : 1.0f);
+                if (emitInterval <= 0.0f) emitInterval = 1.0f / 60.0f;
+            }
+            else
+            {
+                const float rate = (emitTotal > 1) ? ((float)emitTotal / dur) : (float)g_EmitRate;
+                emitInterval = 1.0f / ((rate > 0.0f) ? rate : 1.0f);
+                if (emitInterval <= 0.0f) emitInterval = 1.0f / 60.0f;
+            }
         }
 
         {
