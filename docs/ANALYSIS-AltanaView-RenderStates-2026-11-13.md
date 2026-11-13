@@ -368,9 +368,10 @@ timeline: 0x01(V) 0x56(30) 0x3C(shwh) 0x53(0303) 0x0B(0303) 0x31 0x03(tgt0) 0x32
 
 ### 12.2 AltanaView の見た目
 
-- 白い**四芒星**の粒子がキャラクタの周囲に散在（`crop_q_on.png`）
+- 白い**四芒星**の粒子がキャラクタの周囲に散在（`docs/shots/2026-11-13-cure-alpha-on.png`）
 - 頭部に紫の発光（別 generator）
-- ワイヤーフレームにしても**星は線画にならない**（＝粒子はモデルとは別経路）
+- Alpha を切ると**粒子だけ消える**（`docs/shots/2026-11-13-cure-alpha-off.png`）
+- ワイヤーフレームにしても**星は線画にならない**（`docs/shots/2026-11-13-cure-wireframe.png`）
 
 ### 12.3 現行 EffectTest の出力（既定 `--frames 90`）
 
