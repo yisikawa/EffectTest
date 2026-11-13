@@ -242,6 +242,8 @@ PROJECTION（`D3DTS_PROJECTION`）:
 | 3 | `Clear` の色 | 画面からは RGB(128,255,255) を採取。`Clear` フックは引数型で失敗 | 引数を生バイトで読む／`D3DRS_*` ではなく `Clear` の Color を直接記録 |
 | 4 | 1 フレーム内のバッチ順序 | `DrawPrimitive` の並びは取れている（per-draw ログ 180 件） | テクスチャ毎のまとまり・Z 順の有無を集計 |
 | 5 | 深度 D16 の影響 | 未評価 | EffectTest を D16 にして `hollow`/`fill` を比較 |
+| 6 | View → Texture / Bilinear / Smooth Shade / Light の実装 | 未計測（Alpha/Wireframe のみ） | 同じ手順で `WM_COMMAND` を送り、`SetTexture(NULL)` / `SetSamplerState` / `SHADEMODE` / `LIGHTING` の差分を見る |
+| 7 | 粒子の頂点そのもの（寸法・向き） | `Lock` の `ppbData` は取得済みだが Draw との対応が未確定 | `Lock` 中のポインタ + `DrawPrimitive` の start/prim を同時に記録 |
 
 ---
 
@@ -277,7 +279,155 @@ Get-Content "$env:TEMP\av_spike\probe6_out.jsonl"
 
 ---
 
-## 11. 参照
+## 11. View メニューの実装（実測・2026-11-13 追加）
+
+メニュー構成（`GetMenu` / `GetMenuStringW` で実測。`&` はアクセラレータ）:
+
+| メニュー | コマンド ID | 内容 |
+|---|---|---|
+| File → Pause | **40002** | 時計を止める（**描画は継続**。CPU 約 34% で回り続ける） |
+| File → Save Image | 40028 (F11) | |
+| File → Copy Image | 40029 | |
+| File → Exit | 57665 | |
+| **View → Alpha** | **40013** | 後述（D3D ステートを変えない） |
+| View → Texture | 40014 | |
+| View → Bilinear Filter | 40015 | |
+| View → Smooth Shade | 40016 | |
+| View → Light | 40017 | |
+| **View → Wireframe** | **40018** | **`D3DRS_FILLMODE = 2`（WIREFRAME）** |
+| View → Camera Rotation | (サブメニュー) | |
+| View → Auto Adjust Camera | 40019 | |
+| View → Reset Camera | 40020 | |
+
+### 11.1 Wireframe（40018）
+
+- `WM_COMMAND(40018)` → 次フレームで `SetRenderState(D3DRS_FILLMODE, 2)` が 1 回だけ発行される（実測: frame 498）
+- 画像: **キャラクタの三角形が線画になる**（`%TEMP%\av_spike\crop_q_wire.png`）
+- **粒子（Cure の星）はワイヤーフレームでも見えない** → 粒子パスでは `FILLMODE` が
+  モデルパスと別（おそらくソフト側で面を組んでいる、または粒子が細線で視認できない）
+
+### 11.2 Alpha（40013）— ここが最重要
+
+- `WM_COMMAND(40013)` では **D3D のレンダーステート/テクスチャステージが一切変化しない**
+  （`SetRenderState` を全 ID 監視しても差分ゼロ）
+- しかし**画像は大きく変わる**（Pause で固定した同一フレームで比較）:
+
+| 比較（Pause 中・同一フレーム） | 変化点 | 差分量 |
+|---|---|---|
+| Alpha **ON** vs **OFF** | 4,434 点 | 317,564 |
+| Alpha OFF vs Wireframe | 3,278 点 | 968,576 |
+
+- 見た目（`crop_q_on.png` / `crop_q_alphaoff.png`）:
+  - **ON**: 白い四芒星の粒子（Cure）＋ 頭部の紫の発光
+  - **OFF**: **粒子が完全に消える**（キャラクタは残る）
+- 解釈: `ALPHATESTENABLE=1`（ref=32, GREATER）は**常に ON のまま**で、
+  Alpha メニューは **CPU 側で粒子の α を 0 にする**（＝αテストで全滅）と考えるのが自然。
+  - 根拠: αテストと加算合成が有効なまま、αだけが変われば「消える」挙動と一致
+  - 対立仮説（αブレンドの ON/OFF）は `ALPHABLENDENABLE` が変化しないため否定
+
+> **EffectTest への含意**: α テストを入れないと、Alpha OFF 相当（＝α 0 の粒子）が
+> 加算で「見えない」のではなく「黒い板」として残る。Cure の見た目差の主因。
+
+### 11.3 1 フレームの構成（同一フレーム内の順序）
+
+`SetTexture` / `SetTextureStageState` / `SetTransform` / `DrawPrimitive` を時系列で並べると:
+
+```
+Clear
+COLOROP=2 (SELECTARG1)  + ADDRESSU=CLAMP
+View/Proj
+SetTexture(0, texA) → 8 枚を順に切替（モデルの材質）
+COLOROP=5 (MODULATE2X)          ← ★エフェクト用パスに切替
+View/Proj
+（粒子の DrawPrimitive 群）
+```
+
+→ **COLOROP は 1 フレーム内で 2 に戻したり 5 にしたり**している。
+`GetTextureStageState` で見えた 5/6 は「エフェクトパス実行中」の値。
+
+---
+
+## 12. Cure（`ROM\10\9.DAT`）の解析
+
+`List\Effect\WhiteMagic.csv` の 1 行目 `10/9,Cure` から特定（`List\Effect\index.csv` の
+先頭が WhiteMagic = `[Effect] List=0`、`Item=0` が Cure）。
+
+### 12.1 データ（`--selftest`、2026-11-10 ビルド）
+
+```
+chunks=29 generators=8 duration=3.3333s
+  prn1 frames=9  0.1667s / kr30 frames=4  / kr10 frames=6 / gr00 frames=185 3.1s
+  rn00 frames=9 / prn0 frames=9 / kr11 frames=1 / kr12 frames=7
+timeline: 0x01(V) 0x56(30) 0x3C(shwh) 0x53(0303) 0x0B(0303) 0x31 0x03(tgt0) 0x32(193) 0x00
+```
+
+- 全 generator が **type 0x05**（テクスチャフレーム）
+- `kr*` 系は `pos.y` が毎フレーム減少（0 → -2.37）、`scl=(0.024, 0.000, 1.000)`
+- 全 generator の **`col` の α が 0.00**（`colorfallback on` で 1 に置換されて描かれる）
+- リンク名: `gr`（64×64）、`kir1`（64×64）、`ring`（32×32）
+
+### 12.2 AltanaView の見た目
+
+- 白い**四芒星**の粒子がキャラクタの周囲に散在（`crop_q_on.png`）
+- 頭部に紫の発光（別 generator）
+- ワイヤーフレームにしても**星は線画にならない**（＝粒子はモデルとは別経路）
+
+### 12.3 現行 EffectTest の出力（既定 `--frames 90`）
+
+| 指標 | 値 |
+|---|---|
+| `nonBg` / `maxSum` | 3,786 / 309 |
+| bbox / aspect / fill / hollow / peak | 137×493 / **0.278** / 0.898 / **6.829** / 0.029 |
+
+→ **縦長の暗い筋**（星ではない）。`hollow=6.83` は「中央に集中」を意味する。
+
+### 12.4 差分の切り分け（本案の結論）
+
+| 要因 | AltanaView | EffectTest | 影響 |
+|---|---|---|---|
+| αテスト | 有効（ref 32 / GREATER） | **無効** | 星の「硬い縁」が出ない／α 0 の粒が黒板として残る |
+| 合成 | `SRCALPHA`+`ONE`（加算） | 既定 `alpha` | 暗く・にじむ |
+| 色 | stage0 `MODULATE2X` / `MODULATE4X` | `×1.5` / 等倍 | 芯が白く飛ばない |
+| α の由来 | サブ α（4 倍してテスト） | `colorfallback` で 1 固定 | α 0 のデータが「見える」→ 形が崩れる |
+| カメラ | dist 2.785 / fovY 57.3° / near 0.125 | dist 14 / 45° / 0.1 | 粒子が小さく見える |
+
+> **注**: `--colorfallback on` は Cure のように **α=0 が正常値**のデータでは
+> 「見えてはいけない粒を見せている」可能性がある。α テストと併用したときの
+> 正味の見え方を A/B する必要がある（設計時の検証項目）。
+
+### 12.5 再現コマンド（要リビルド。下記 §13 参照）
+
+```powershell
+$ROM = 'C:\Program Files (x86)\PlayOnline\SquareEnix\FINAL FANTASY XI\ROM'
+.\x64\Release\EffectTest.exe --shot "$ROM\10\9.DAT" cure.png --frames 90
+tools\ShotStats.ps1 -Path cure.png ; tools\RingStats.ps1 -Path cure.png
+```
+
+---
+
+## 13. 付記（重要・次回の前提）
+
+1. **`x64\Release\EffectTest.exe` は 2026-11-10 ビルド**で、2026-11-12 追加の CLI
+   （`--colorfallback` / `--arrange` / `--ringplane` / `--ringscale` / `--spiral turns` 等）が
+   **入っていない**。未知のフラグは位置引数として食われ、`png=off` のような
+   不可解な挙動になる（実測）。**A/B の前に必ずリビルド**する。
+2. **デバイス vtable は +1 ずれている**（この AltanaView のサンク表）:
+   `80`→`81 DrawPrimitive`, `81`→`82 DrawIndexedPrimitive`, `99`→`100 SetStreamSource`,
+   `101`→`102 SetStreamSourceFreq`, `103`→`104 SetIndices`, `88`→`89 SetFVF`。
+   `42 EndScene` / `44 SetTransform` / `47 SetViewport` / `57 SetRenderState` /
+   `65 SetTexture` / `67 SetTextureStageState` / `69 SetSamplerState` は**ずれなし**。
+   → スロットは必ず `ret imm16`（引数バイト数）で確認する。
+3. **頂点バッファ**: `SetStreamSource(0, vb, 0, stride=32)` を毎バッチで設定し、
+   `Lock(0, size, &p, D3DLOCK_DISCARD)` → 書き込み → `Unlock` を**描画ごとに繰り返す**
+   （計測中に 8,578 回）。頂点の中身の取得は未完了（次回 `Lock` の `ppbData` から読む）。
+4. 計測に使ったスクリプトは `%TEMP%\av_spike\`（`probe7.js` 状態ログ / `probe8..11.js` 頂点・スロット調査 /
+   `drive5.ps1` メニュー操作）。`AltanaView.ini` は `AltanaView.ini.bak` から復元済み。
+
+---
+
+## 14. 参照
+
+
 
 | 文書 | 内容 |
 |---|---|
