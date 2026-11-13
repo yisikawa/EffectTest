@@ -347,7 +347,7 @@ View/Proj
 
 ---
 
-## 12. Cure（`ROM\10\9.DAT`）の解析
+## 12. Cure 系の解析（`10/9` → `10/12` の訂正を含む）
 
 `List\Effect\WhiteMagic.csv` の 1 行目 `10/9,Cure` から特定（`List\Effect\index.csv` の
 先頭が WhiteMagic = `[Effect] List=0`、`Item=0` が Cure）。
