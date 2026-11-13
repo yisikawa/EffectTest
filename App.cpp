@@ -53,6 +53,7 @@ namespace
     bool  g_NoTexture = false;    // W: テクスチャを使わず白で描く（デバッグ）
     bool  g_ShowAxes  = false;    // X: 座標軸の表示（既定 OFF。起動時は何も描かない）
     float g_SizeScale = 1.0f;     // ビルボードの基準半径
+    char  g_OnlyGen[9] = {};      // --only <name>: 指定 generator だけを描く（空 = 全部）
     // UV オフセット（sub+0xB4/0xB8）。0=off / 1=0..1 巡回 / 2=セル内巡回
     //   問題 2: bool だと `cell`(=2) が true(=1) に化けて 2 が到達不能になる。
     int   g_UvScroll  = 0;
@@ -451,6 +452,9 @@ static void RenderScene(bool present)
     {
         const MotionInstance& mi = insts[i];
 
+        // --only <name>: 指定 generator だけを描く（ffxitool5 との要素単位比較用）
+        if (g_OnlyGen[0] != 0 && _stricmp(mi.gen->chunk.name, g_OnlyGen) != 0) continue;
+
         // 骨格のルート変換（--model / --motion / --bone / --bone-map）はインスタンス単位
         const float* Mptr = nullptr;
         if (i < (int)g_InstHasBone.size() && g_InstHasBone[i])
@@ -535,26 +539,6 @@ static void RenderScene(bool present)
                 center[0] += axR[0] * su.quadCenter[0] + axU[0] * su.quadCenter[1];
                 center[1] += axR[1] * su.quadCenter[0] + axU[1] * su.quadCenter[1];
                 center[2] += axR[2] * su.quadCenter[0] + axU[2] * su.quadCenter[1];
-            }
-            else if (g_SizeMode == 4)
-            {
-                // クワッド実寸 × VM の Scale（--size quadscale）
-                //   0x21 のローカル範囲は「テクスチャ 1 枚ぶんの実寸」で、倍率は
-                //   VM の Scale が担う。Cure 10/9 の prn は ±2 m × 0.1 = 0.2 m 角
-                //   となり、参照の星の大きさ（約 20〜40 px @ dist 2.785）と一致する。
-                if (su.quadHalf[0] > 0.0f && su.quadHalf[1] > 0.0f)
-                {
-                    halfW = g_SizeScale * su.quadHalf[0] * sx;
-                    halfH = g_SizeScale * su.quadHalf[1] * sy2;
-                    center[0] += axR[0] * su.quadCenter[0] * sx + axU[0] * su.quadCenter[1] * sy2;
-                    center[1] += axR[1] * su.quadCenter[0] * sx + axU[1] * su.quadCenter[1] * sy2;
-                    center[2] += axR[2] * su.quadCenter[0] * sx + axU[2] * su.quadCenter[1] * sy2;
-                }
-                else
-                {
-                    halfW = g_SizeScale * sx;
-                    halfH = g_SizeScale * sy2;
-                }
             }
             else if (g_SizeMode == 2)
             {
@@ -1684,7 +1668,6 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
                 else if (_stricmp(mode, "square") == 0) g_SizeMode = 2;
                 else if (_stricmp(mode, "meter")  == 0) g_SizeMode = 3;
                 else if (_stricmp(mode, "scale")  == 0) g_SizeMode = 0;
-                else if (_stricmp(mode, "quadscale") == 0) g_SizeMode = 4;
                 else { Log("[shot] unknown size: %s", mode); return 2; }
                 continue;
             }
@@ -2030,6 +2013,16 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
                     Log("[shot] ffxi=off");
                 }
                 else { Log("[shot] unknown ffxi: %s", mode); return 2; }
+                continue;
+            }
+
+            // 指定 generator だけを描く（要素単位の比較用）
+            if (_stricmp(tok, "--only") == 0)
+            {
+                char nm[MAX_PATH] = {};
+                if (!NextToken(p, nm, MAX_PATH)) return 2;
+                strncpy_s(g_OnlyGen, nm, _TRUNCATE);
+                Log("[shot] only=%s", g_OnlyGen);
                 continue;
             }
 
