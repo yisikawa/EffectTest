@@ -284,9 +284,29 @@ u = FUN_00406848();                       // 供給元（次段で特定）
 
 → ffxitool5 は **粒子色を D3DCOLOR（ARGB）にパック**し、
 `DrawPrimitive` の頂点色として渡す（固定機能の DIFFUSE）。
-**サイズはこの関数群では扱っていない**ので、次段は
-`DrawPrimitive` の直前で頂点座標を書く箇所（`FUN_004050b0` の中ほど）を読む。
 
+### 4.8 クワッドのサイズ（`FUN_004050b0` 中ほど）
+
+```c
+fStack_228 = (float)param_1[0xb];            // 高さ（インスタンス +0x2C）
+fStack_20c = (float)param_1[10];             // 幅  （インスタンス +0x28）
+if (track 0x14e8) fStack_20c = FUN_00403940(*(float**)(this+0x20e8), t);  // 幅トラック
+if (track 0x14ec) fStack_228 = FUN_00403940(*(float**)(this+0x20ec), t);  // 高さトラック
+if (*(int*)(this+0x102c)) {
+    *(float*)(*(int*)(this+0x102c) + 0x0C) = fStack_20c;   // 幅
+    *(float*)(*(int*)(this+0x102c) + 0x10) = fStack_228;   // 高さ
+}
+/* このあと行列（平行移動・回転）を組んで頂点を生成 */
+```
+
+**結論: サイズは VM の Scale そのもの**（`param_1[10]` = Scale X、`param_1[0xb]` = Scale Y）。
+`0x21` のクワッド実寸（±2 など）は**掛けない**。
+
+→ EffectTest は **`--size scale`**（`halfW = scale[0]`, `halfH = scale[1]`）が正解。
+Cure の prn は `Scale = (0.1, 0.1, 1)` → **0.2 m 角**で、参照の星（833×709 / dist 2.785 で
+30〜40 px）と一致する。`--size quad`（0x21 実寸）や `--size meter`（1 m 固定）は大きすぎる。
+
+## 5. `FUN_004050b0`（1 インスタンス描画）の構造
 
 ### 5.1 毎フレームの値の決め方
 
