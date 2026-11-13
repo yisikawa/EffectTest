@@ -236,6 +236,7 @@ void EffectSetRingDist(bool on);
 bool EffectRingDist();
 // キー補間の方式（true = 実測どおりの増分補間 / false = 従来の絶対補間）
 void EffectSetKeyIncr(bool on);
+void EffectSetKeyMode(int mode);
 bool EffectKeyIncr();
 // 配置の形（0=line / 1=ring（均等） / 2=spiral（らせん））と円周を張る面
 void EffectSetArrange(int mode);

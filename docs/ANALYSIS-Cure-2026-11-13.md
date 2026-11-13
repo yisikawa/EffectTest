@@ -214,7 +214,38 @@ Cure（`10/9`）で実際に走る op のうち、**我々に実装が無いも�
 
 ---
 
-## 8. 参考: Cure のデータ構造（`--selftest`）
+## 9. ffxitool5 解析の反映（2026-11-13 追加）
+
+`docs/ANALYSIS-ffxitool5-2026-11-13.md` で得た知見を EffectTest に反映した。
+
+| 追加 | 内容 | 既定 |
+|---|---|---|
+| `--keymode norm` | ffxitool5 `FUN_00403940` 方式（0..1 正規化・区間探索・線形補間） | incr（従来） |
+| `--blend alpha_add` | 既存。ffxitool5 は `SRCALPHA + ONE`（加算） | alpha |
+| `--gain 4` | 既存。ffxitool5 は `COLOROP = MODULATE4X`（RGB ×4） | 1.5 |
+
+**計測結果（Cure 10/9, `--frames 45`, `--moveint on --ringscale 1`）**
+
+| keymode | prn0 α | prn1 α |
+|---|---|---|
+| incr（従来） | 0.006 – 0.073 | 0.006 – 0.088 |
+| **norm（新）** | **0.000** | **0.000** |
+
+→ `norm` にすると α が **0 に落ちる**。つまり prn の α トラック（`prx0`）の
+**キー表の読み方（`keyFirst` / `count` / 時間軸の単位）がまだ正しくない**。
+incr 側の 0.006〜0.088 は「増分補間のドリフト」で出ていた値で、実データ由来ではない可能性が高い。
+
+**次の一手**: Cure の `0x19` チャンク（`prx0` / `k1x0` / `k3x0`）の生バイトを読み、
+`(size-0x18)/8` 件の `[time, value]` が **秒かフレームか**、**昇順か**、
+先頭に終端（1.0）が来ていないかを確認する。
+
+回帰は維持: `11\17=9,310` / `11\22=962` / `12\43=4,764`、`--selftest` も
+`keys 8/8 resolved, 0 unresolved`・`rebuild = ok`。
+
+---
+
+## 10. 参考: Cure のデータ構造（`--selftest`）
+
 
 
 - size 16,592 B / chunks 29 / generators 8 / timeline 9 命令 / duration 3.3333 s

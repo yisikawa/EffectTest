@@ -109,7 +109,39 @@ namespace
         return out + (tNew - tOld) * (scale * kv - out) / denom;
     }
 
-    // VM#1 のキー表設定 op（実測 FUN_0040e0b0 L11030-11037）
+    // ffxitool5（FUN_00403940）方式のキー評価
+    //   - t は 0..1 に正規化済み（呼び側で T01 を渡す）
+    //   - 表は [time, value] の並び。キー区間を毎回探し、線形補間する
+    //   - t が最後のキーより後なら最後の値
+    //   - カーソル前進や「現在値基準」の増分計算は行わない（ffxitool5 と同じ）
+    float EvalKeyTrackNorm(const DatFile& dat, uint32_t first, uint32_t count,
+                           float t01, float scale)
+    {
+        if (first == 0u || count == 0u) return 0.0f;
+        if (count > 64u) count = 64u;
+        if (t01 < 0.0f) t01 = 0.0f;
+        if (t01 > 1.0f) t01 = 1.0f;
+
+        float t0 = 0.0f, v0 = 0.0f;
+        for (uint32_t i = 0; i < count; ++i)
+        {
+            const uint32_t e = first + i * 8u;
+            if (!dat.InRange(e, 8)) break;
+            const uint8_t* q = dat.At(e);
+            float ti = 0.0f, vi = 0.0f;
+            memcpy(&ti, q, 4);
+            memcpy(&vi, q + 4, 4);
+            if (ti < -1e6f || ti > 1e6f || vi < -1e12f || vi > 1e12f) continue;
+            if (i == 0u) { t0 = ti; v0 = vi; }
+            if (t01 == ti) return scale * vi;
+            if (t01 >= t0 && t01 <= ti && ti > t0)
+                return scale * (v0 + (t01 - t0) * (vi - v0) / (ti - t0));
+            t0 = ti; v0 = vi;
+        }
+        return scale * v0;                 // 最後のキー値（ffxitool5 の終端挙動）
+    }
+
+
     //   `(0x20<op<0x30) || (0x32<op<0x37) || (0x58<op<0x5c)`
     //   VM#1 の保存判定と --selftest の監査で共用する。
     inline bool IsKeyOp(uint8_t op)
@@ -126,6 +158,7 @@ namespace
     int  g_EmitRate = 24;          // 既定の放出レート（個/秒）。--emitrate で変更
     bool g_Ring     = true;        // 0x06/0x1F を円周上配置にする（--ring on/off）
     bool g_KeyIncr  = true;        // キー補間を実測どおり「カーソル前進＋現在値基準」で行う（--keymode abs で旧方式）
+    int  g_KeyMode  = 0;           // 0=incr（従来） / 1=abs / 2=norm（ffxitool5 FUN_00403940 方式）
     bool g_RingDist = false;       // 0x1F の半径に arg7（-0.4..-0.8 の絶対値）を使う
                                    //   （--ringradius dist。既定 xy = arg0/arg1）
     float g_RingScale = 4.0f;      // 円周半径の倍率（--ringscale N。既定 4）
@@ -188,7 +221,8 @@ bool EffectRing() { return g_Ring; }
 void EffectSetRingScale(float s) { g_RingScale = (s > 0.0f) ? s : 1.0f; }
 void EffectSetRingDist(bool on) { g_RingDist = on; }
 bool EffectRingDist() { return g_RingDist; }
-void EffectSetKeyIncr(bool on) { g_KeyIncr = on; }
+void EffectSetKeyIncr(bool on) { g_KeyIncr = on; g_KeyMode = on ? 0 : 1; }
+void EffectSetKeyMode(int mode) { g_KeyMode = mode; g_KeyIncr = (mode == 0); }
 bool EffectKeyIncr() { return g_KeyIncr; }
 void EffectSetArrange(int mode)
 {
@@ -725,7 +759,12 @@ static bool Vm2(const MotionInstance& mi, SubUnit& su, float dt, float rootDurat
                 // 0x12..0x14 は角度（度 → ラジアン）
                 const float scale = (op >= 0x12 && op <= 0x14) ? 3.14159265f : 1.0f;
                 float* outSlot = su.sub.At(((uint32_t)op + 0x11u) * 4u);
-                if (g_KeyIncr)
+                if (g_KeyMode == 2)
+                {
+                    // ffxitool5（FUN_00403940）方式: 0..1 正規化＋区間探索の線形補間
+                    outSlot[0] = EvalKeyTrackNorm(*mi.dat, first, count, su.sub.T01(), scale);
+                }
+                else if (g_KeyIncr)
                 {
                     // 実測 FUN_0040f820: カーソル前進＋現在値基準の増分補間
                     uint32_t cur = (dest < SUB_DEST_N) ? su.keyCur[dest] : 0u;

@@ -1839,6 +1839,7 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
                 if (!NextToken(p, mode, MAX_PATH)) return 2;
                 if      (_stricmp(mode, "incr") == 0) EffectSetKeyIncr(true);
                 else if (_stricmp(mode, "abs")  == 0) EffectSetKeyIncr(false);
+                else if (_stricmp(mode, "norm") == 0) EffectSetKeyMode(2);
                 else { Log("[shot] unknown keymode: %s", mode); return 2; }
                 Log("[shot] keymode=%s", mode);
                 continue;
