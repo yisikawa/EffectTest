@@ -197,7 +197,57 @@ EffectTest 側は現在 `main + 0x50`（タイムライン）と `main + 0x8C`�
 
 ---
 
-## 5. 次段（このアプリを優先して進める）
+### 4.5 描画ステート（`FUN_00405610` / 0x405610..0x40579d, 398 B）
+
+デバイスはグローバル **`DAT_0043f3c0`**（`FUN_004050b0` の `+0x94` = Clear 呼び出しで確定）。
+
+```c
+SetRenderState(0xAB /*BLENDOP*/,        1   /*ADD*/);
+SetRenderState(0x1B /*ALPHABLENDENABLE*/, 1);
+SetRenderState(0x13 /*SRCBLEND*/,       5   /*SRCALPHA*/);
+SetRenderState(0x14 /*DESTBLEND*/,      2   /*ONE*/);     // ← 加算合成
+SetTextureStageState(0, 1 /*COLOROP*/,   6 /*MODULATE4X*/);
+SetTextureStageState(0, 2 /*ALPHAOP*/,   2 /*SELECTARG1*/);
+SetTextureStageState(0, 3 /*COLORARG1*/, 0 /*DIFFUSE*/);
+SetTextureStageState(0, 4 /*COLORARG2*/, 6 /*CONSTANT*/);
+SetTextureStageState(0, 5 /*ALPHAARG1*/, 2 /*TEXTURE*/);
+SetTextureStageState(0, 6 /*ALPHAARG2*/, 0 /*DIFFUSE*/);
+SetTextureStageState(0, 0x10 /*COLORARG0*/, 2 /*TEXTURE*/);
+SetTextureStageState(0, 0x11 /*ALPHAARG0*/, 2 /*TEXTURE*/);
+
+for (i = 0; i < param_1[0x409]; ++i) {          // インスタンス数
+    SetRenderState(0xAB, 1);
+    SetRenderState(0x13, 5);                     // SRCALPHA
+    SetRenderState(0x14, 2);                     // ONE
+    SetRenderState(0x0E /*CULLMODE*/, 0);        // NONE（両面）
+    SetRenderState(0x07 /*ZWRITEENABLE*/, 0);    // 深度は書かない
+    FUN_004050b0(param_1, param_1[9 + i]);       // 1 インスタンスを描く
+}
+```
+
+**EffectTest との比較**
+
+| 項目 | ffxitool5（このアプリ） | AltanaView（D3D9 実測） | EffectTest 現行 |
+|---|---|---|---|
+| 合成 | SRCALPHA + **ONE**（加算） | SRCALPHA + ONE | 既定 alpha（=SRCALPHA/INVSRCALPHA） |
+| COLOROP | **MODULATE4X（RGB ×4）** | MODULATE2X（×2）+ α は MODULATE4X | 自前 PS で ×gain(1.5) |
+| ALPHAOP | **SELECTARG1（テクスチャ α）** | MODULATE4X（α ×4） | 自前 PS |
+| CULL | NONE | NONE | — |
+| ZWRITE | 0 | 0 | — |
+
+→ 「白飛びする明るさ」の正体は **RGB ×4 の MODULATE4X + 加算合成**。
+AltanaView はステージを 2 段（×2 と ×4）に分けていたが、ffxitool5 は 1 段で ×4。
+**どちらも「×4 相当」**で、EffectTest の `--gain 1.5` では足りないことが裏付けられた。
+
+## 5. `FUN_004050b0`（1 インスタンス描画）の構造
+
+- 冒頭で行列スタックを組み立て、`thunk_FUN_0041154c` / `0x4114bc` / `0x410c10` /
+  `0x4115dc` / `0x411678` / `0x411715` を呼ぶ（**自前の行列・回転ヘルパ**）。
+- 末尾で `(**(code**)(*DAT_0043f3c0 + 0x94))(...)` = **Clear**、
+  その後 `(**(code**)(*(this+0x102c) + 8))(...)` = Release 相当。
+
+
+## 6. 次段（このアプリを優先して進める）
 
 1. ~~`FUN_00403ac0` を解読~~ **完了**（main チャンクの特定と 3 ストリームの取得）。
    次は `FUN_00403a70` の戻り値（this+0x04/0x08/0x0C のストリーム）を
@@ -205,16 +255,19 @@ EffectTest 側は現在 `main + 0x50`（タイムライン）と `main + 0x8C`�
 2. **main チャンクの +0x20/+0x24/+0x28 と +0x2C の意味を確定**し、
    EffectTest の `+0x50`（タイムライン）/`+0x8C`（ストリーム D）と対応づける。
    → Cure の 9 命令タイムラインがどれに当たるかを実データで照合できる。
-3. 初期化関数（0x401769 周辺）から**デバイスポインタのグローバル**を特定し、
-   `SetRenderState` / `SetTextureStageState` / `DrawPrimitive` の実値を読む。
-4. 得られた知見を EffectTest に反映（α×4 / RGB×2 / サイズの掛け方 / Move 積分の裏取り）。
+3. ~~デバイスグローバルと描画ステート~~ **完了**（`DAT_0043f3c0`、§4.5）。
+   次は `FUN_004050b0` の**頂点生成部**（サイズ・UV・α の決め方）を読む。
+4. 得られた知見を EffectTest に反映:
+   - **加算合成を既定に**（SRCALPHA + ONE）
+   - **RGB ×4**（MODULATE4X 相当）に合わせる
+   - 粒子サイズの掛け方（`FUN_004050b0` から）
+   - Move 積分の裏取り
 5. **参照画像の自動収集**：ID を順に送ってタイトルから DAT を記録し各エフェクトを撮影。
-
-
 
 ---
 
-## 6. 再現手順（参照の取り方）
+## 7. 再現手順（参照の取り方）
+
 
 ```
 # ffxitool5 を必ず自分のフォルダで起動（.\effect.txt を相対で読むため）
