@@ -119,24 +119,52 @@ hi = 10,  lo = id - 2792        （2801 → 9、2804 → 12、2848 → 56 で検
 ## 4. 描画側の手がかり
 
 - `Direct3DCreate8` の呼び出しは **0x401769**（初期化関数内）。
-  デバイス生成 → 以降は vtable 呼び出しなので、静的 xref では追いにくい。
-- `>>3 & 0x7FFFF0`（AltanaView のチャンク走査定数）に**一致するバイト列は無い**。
-  → ffxitool5 は DAT のチャンク解釈が AltanaView と別実装（または別経路）。
-  ここは次段で `FUN_004012e0` の呼び出し元から辿る。
+- `>>3 & 0x7FFFF0`（AltanaView のチャンク走査定数）に一致するバイト列は無く、
+  `and eax,0x7FFFF0` も存在しない → チャンク解釈は AltanaView と別実装。
+
+### 4.1 読み込み連鎖（確定）
+
+```
+FUN_00405e30  (0x405e30..0x406118, 745 B)  ← エフェクト選択（キー/一覧から）
+  ├─ FUN_00401440 (0x401440..0x401493,  84 B)  DAT を開く
+  │    ├─ FUN_004012e0  ID → "ROM\<hi>\<lo>.DAT"
+  │    └─ FUN_00401360 (0x401360..0x40143f)  ファイル全体を ReadFile で読む
+  │         CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, OPEN_EXISTING, 0x20)
+  │         GetFileSize → operator_new → ReadFile → GetFileTime → SystemTime
+  ├─ FUN_00402df0 (0x402df0..)  effect.txt の 1 行を登録
+  │    エントリ = 21 dword (0x15) 間隔。+0x4413d8 に 4 dword、+0x4413e9 に
+  │    FUN_00401580 の戻り値（名前オブジェクト）。DAT_0049e420 が件数。
+  ├─ FUN_00403ac0  ← **次段の本命**（パーサ or 描画）
+  └─ FUN_00405990 / 0x406720 / 0x406725 / 0x406778
+```
+
+### 4.2 オブジェクト・レイアウト（`FUN_00401440` の this）
+
+| オフセット | 内容 |
+|---|---|
+| +0x000 | ロード済みフラグ（0 初期化） |
+| +0x004 | パス文字列（`char[0x100]`） |
+| +0x104 | FILETIME → SYSTEMTIME（8 ワード） |
+| +0x114 | DAT 全体のバッファ（`operator_new`、`_free` で解放） |
+| +0x118 | ファイルサイズ |
+
 
 ---
 
 ## 5. 次段（このアプリを優先して進める）
 
-1. `FUN_004012e0` の呼び出し元（4 箇所）から **DAT ローダ → エフェクト構築**を辿る
+1. **`FUN_00403ac0` を解読**（`FUN_00405e30` の 3 番目の callee）。
+   エフェクトのパーサか描画本体のどちらか。ここで D3D8 の
+   `SetRenderState` / `SetTextureStageState` / `DrawPrimitive` の実値が読める。
 2. 0x401769 を含む初期化関数から**デバイスポインタのグローバル**を特定し、
-   その xref から**描画関数（SetRenderState / DrawPrimitive）**を特定
+   その xref から描画経路を確定する。
 3. 得られた知見を EffectTest に反映:
    - α・色・合成（D3D8 の固定機能設定は読みやすい）
    - 粒子サイズの決め方（Scale の掛け方）
    - Move の積分（AltanaView で仮説済み。ここで裏取りできる）
 4. **参照画像の自動収集**：ID を順に送ってタイトルから DAT を記録し、各エフェクトの
    画面を撮る。AltanaView のツリー操作より格段に安定する。
+
 
 ---
 
