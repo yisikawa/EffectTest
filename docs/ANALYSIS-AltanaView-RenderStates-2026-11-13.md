@@ -396,12 +396,37 @@ timeline: 0x01(V) 0x56(30) 0x3C(shwh) 0x53(0303) 0x0B(0303) 0x31 0x03(tgt0) 0x32
 > 「見えてはいけない粒を見せている」可能性がある。α テストと併用したときの
 > 正味の見え方を A/B する必要がある（設計時の検証項目）。
 
-### 12.5 再現コマンド（要リビルド。下記 §13 参照）
+### 12.6 訂正（2026-11-13 追記）— 比較対象の DAT が違っていた
+
+- AltanaView のスクリーンショットのステータスバーは **`1/10/12.DAT`**（＝**Cure IV**）を表示していた。
+  一方、上の §12.1〜12.5 は `10/9.DAT`（**Cure**）を解析していた（`WhiteMagic.csv` の 1 行目）。
+- つまり **別のエフェクト同士を比較していた**。同じ DAT で取り直した結果:
+
+| 対象 | 出力 |
+|---|---|
+| AltanaView `10/12`（Cure IV） | 白い四芒星の粒子が周囲に散在 ＋ 頭部の紫発光 |
+| EffectTest `10/12`（既定） | **暗い円錐（ロケット状）**。`nonBg` 2,647 / `maxSum` 401、bbox 135×367、aspect 0.368、hollow 2.730（`docs/shots/2026-11-13-cure4-effecttest.png`） |
+
+- `10/12` の `--trace`（190 フレーム、917 サンプル）:
+  **15 generator のうち 13 個が `x=0, z=0`**（真下に一直線）、**α=0.00**。
+  `kir0`/`kir1` だけが `z=-35/-73` へ流れ、`α=0.50`。
+- `10/12` の VM#1 実行 op: `0x72`(917) `0x2D`(829) `0x0B`(729) `0x27/0x28`(630) `0x2F`(373)
+  `0x02`(328) `0x29`(240) `0x12`(222) `0x2E`(133) `0x03/0x08/0x1F/0x3D/0x3E`(88) `0x07`(35)
+  → **`0x72` / `0x2D` / `0x3D` / `0x3E` / `0x07` は未実装**。
+- VM#2 は `0x1D`(29,204) `0x08`(20,756) が多く、**`0x1D` は未実装**。
+
+> **結論（現時点）**: 「花火のような破片」に見えない理由は、**位置が散らない（x=z=0）＋α=0** の 2 点。
+> 描画ステートの修正だけでは足りず、**VM 側の位置/α の生成**を確定させる必要がある。
+> 次の一手は「AltanaView の生の粒子構造体（`obj+0xA0`, 0x108 B）を読んで、
+> 位置・色（`+0xA4..0xB0`）・行列（`+0x40`）を我々の VM 出力と**フィールド単位で比較**する」。
+
+
+### 12.7 再現コマンド（要リビルド。下記 §13 参照）
 
 ```powershell
 $ROM = 'C:\Program Files (x86)\PlayOnline\SquareEnix\FINAL FANTASY XI\ROM'
-.\x64\Release\EffectTest.exe --shot "$ROM\10\9.DAT" cure.png --frames 90
-tools\ShotStats.ps1 -Path cure.png ; tools\RingStats.ps1 -Path cure.png
+.\x64\Release\EffectTest.exe --shot "$ROM\10\12.DAT" cure4.png --frames 190
+tools\ShotStats.ps1 -Path cure4.png ; tools\RingStats.ps1 -Path cure4.png
 ```
 
 ---
