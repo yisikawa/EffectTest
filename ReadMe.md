@@ -137,6 +137,7 @@ EffectTest.exe --action "<DAT>" vatk           # 指定アクションの命令�
 EffectTest.exe --selftest "<DAT>"              # Effect としてのタイムライン検証
 EffectTest.exe --shot "<DAT>" out.png --nodetypes ffxi --opstat   # ffxitool5 非対応 type を対象外にして集計
 EffectTest.exe --shot "<DAT>" out.png --frames 260 --sched tgt0   # main 以外の 0x07 を再生
+EffectTest.exe --shot "<DAT>" out.png --camera ffxi --res 640x480   # ffxitool5 と同じ RH カメラ
 ```
 
 - **`--nodetypes ffxi|all`**（既定 `all`）: `ffxi` にすると ffxitool5 が `Doesnt work` と表示する type を**対象外**として実行しません（`--opstat` に `skip 0x..` を出します）。詳細は `docs/ANALYSIS-ffxitool5-NODETYPES-2026-11-14.md`。
@@ -147,6 +148,7 @@ EffectTest.exe --shot "<DAT>" out.png --frames 260 --sched tgt0   # main 以外�
   - **`rebuild   = ok (...)`** — 同一 `EffectContext` で 2 回 `Build` しても索引が累積しないこと。
   - **`missing   = N generator(s) unresolved`** — タイムラインが参照した generator 名のうち解決できなかった数（`[spawn] generator not found: …` をログにも出す）。
 - **`--sched <name>`**: `--shot` で `main` 以外の 0x07 Schedule を再生します（例: Cure `tgt0`）。op 0x03 の入れ子 Schedule は **ローカル DAT → ベース DAT（`ROM\0\0.DAT`）** の順で解決し、`[sub] <name>: base|local insts=N at frame=F ops=..` をログに出します。
+- **`--camera ffxi|orbit`**（既定 `orbit`）: `ffxi` にすると ffxitool5（`FUN_00405ab0`）と同じ **RH の View/Projection**（eye=(0,0.05,-5) / up=+Y / fov 45° / aspect 4:3 固定 / near 1 / far 20）で描きます。実効軸は **右=-X / 上=+Y / 奥=+Z**。`--axes on` で座標軸を表示できます。詳細は `docs/ANALYSIS-ffxitool5-Camera-2026-11-14.md`。
 - 出力ファイルは**上書き**ですが、実行直後の読み取りは競合することがあるため、`Start-Sleep -Milliseconds 300` を挟むか `file      = ...` 行で対象 DAT を確認してください。
 - 必要資源（generator / texture / base）はアプリ非依存の `tools\EffectRes.ps1` で算出できます（`[res] SUMMARY ...`）。
 - **入れ子 Schedule**: `op 0x03` の名前が `0x07` を指す場合、その Schedule を並行実行します（`--selftest` の **`subtl    = N`**）。例: `12\43` の `main` は `hit1` を起動（`subtl = 1`）。

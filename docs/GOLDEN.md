@@ -188,3 +188,19 @@ tools\ShotStats.ps1 -Path tgt0.png
 旧実装はローカル DAT しか探さず、`mdam` を「未解決 generator」として捨てていた。
 詳細: `docs/ANALYSIS-Cure-tgt0-2026-11-14.md`
 
+
+---
+
+## 4. カメラ座標系（`--camera ffxi` / 2026-11-14 追加）
+
+ffxitool5（`FUN_00405ab0`）の View/Projection を再現するモード。**既定は orbit のまま**。
+
+| 項目 | 期待値 |
+|---|---|
+| ログ | `[cam] mode=ffxi rh eye=(0,0.05,-5) at=(0,0,0) up=(0,1,0) fov=45 aspect=4:3 zn=1 zf=20 (right=-X up=+Y fwd=+Z)` |
+| `--shot ROM\10\9.DAT --sched tgt0 --frames 40 --res 640x480 --camera ffxi` | **nonBg=6,433 / maxSum=347** |
+| 同位置の orbit（`--yaw 0 --pitch 0.01 --dist 5`） | 6,424 / 346 |
+| 画像の関係 | 左右反転で平均差 **2.378**（反転なし 11.778 / step=2） |
+
+詳細: `docs/ANALYSIS-ffxitool5-Camera-2026-11-14.md`
+

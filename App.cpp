@@ -84,6 +84,13 @@ float g_ClearColor[4] = { 0.05f, 0.06f, 0.09f, 1.0f };   // --bg で変更（参
     bool  g_Drag  = false;
     POINT g_LastMouse = {};
 
+    // カメラの座標系（--camera）
+    //   0 = orbit（従来。LH / Y-up / +Z 側から見る）
+    //   1 = ffxi （ffxitool5 と同じ。RH / eye=(0,0.05,-5) / up=+Y /
+    //              fov 45° / aspect 4:3 固定 / zn=1 / zf=20）
+    int   g_CameraMode = 0;
+    bool  g_CamLogged  = false;
+
     FILE* g_TraceFile = nullptr;
     float g_Dt        = 1.0f / 60.0f;
 
@@ -428,6 +435,31 @@ static void UpdateCamera(int w, int h)
 {
     if (w <= 0 || h <= 0) return;
 
+    //--------------------------------------------------------------
+    // ffxi モード: ffxitool5（FUN_00405ab0）の View/Projection をそのまま再現
+    //   実測: eye=(0, 0.05, -5) / at=(0,0,0) / up=(0,-1,0)
+    //         FUN_004131bc = RH の LookAt（z = eye-at, x = z×up, y = z×x）
+    //         FUN_00411b22 = RH の Perspective(fov, aspect, zn, zf)
+    //   up に -Y を渡すので、実効の画面軸は **右=-X / 上=+Y / 奥=+Z**。
+    //   D3D の LH 既定（右=+X / 奥=-Z）とは X が反転する＝反対側から見た像。
+    //   ここでは同じ結果になる RH の LookAt/Perspective を組む
+    //   （ffxitool5 の引数をそのまま移すと up が二重反転して上下が逆になる）。
+    //--------------------------------------------------------------
+    if (g_CameraMode == 1)
+    {
+        const XMVECTOR eye = XMVectorSet(0.0f, 0.05f, -5.0f, 1.0f);
+        const XMMATRIX view = XMMatrixLookAtRH(eye, XMVectorSet(0, 0, 0, 1), XMVectorSet(0, 1, 0, 0));
+        const XMMATRIX proj = XMMatrixPerspectiveFovRH(XMConvertToRadians(45.0f), 4.0f / 3.0f, 1.0f, 20.0f);
+        GfxSetCamera(view, proj);
+
+        if (!g_CamLogged)
+        {
+            g_CamLogged = true;
+            Log("[cam] mode=ffxi rh eye=(0,0.05,-5) at=(0,0,0) up=(0,1,0) fov=45 aspect=4:3 zn=1 zf=20 (right=-X up=+Y fwd=+Z)");
+        }
+        return;
+    }
+
     const XMVECTOR eye = XMVectorSet(
         g_Dist * cosf(g_Pitch) * sinf(g_Yaw),
         g_Dist * sinf(g_Pitch),
@@ -435,6 +467,13 @@ static void UpdateCamera(int w, int h)
     const XMMATRIX view = XMMatrixLookAtLH(eye, XMVectorSet(0, 0, 0, 1), XMVectorSet(0, 1, 0, 0));
     const XMMATRIX proj = XMMatrixPerspectiveFovLH(XMConvertToRadians(45.0f), (float)w / (float)h, 0.1f, 1000.0f);
     GfxSetCamera(view, proj);
+
+    if (!g_CamLogged)
+    {
+        g_CamLogged = true;
+        Log("[cam] mode=orbit lh yaw=%.4f pitch=%.4f dist=%.3f fov=45 aspect=%.4f zn=0.1 zf=1000",
+            g_Yaw, g_Pitch, g_Dist, (float)w / (float)h);
+    }
 }
 
 //----------------------------------------------------------------------
@@ -457,8 +496,16 @@ static void RenderScene(bool present)
 
     // カメラの右/上ベクトル（ビルボード用）
     const float cy = cosf(g_Yaw), sy = sinf(g_Yaw), cp = cosf(g_Pitch), sp = sinf(g_Pitch);
-    const float right[3] = { cy, 0.0f, sy };
-    const float up[3]    = { -sy * sp, cp, cy * sp };
+    float right[3] = { cy, 0.0f, sy };
+    float up[3]    = { -sy * sp, cp, cy * sp };
+
+    // ffxi モード: RH カメラの実効軸（右=-X / 上=+Y）に合わせる
+    //   ffxitool5 の LookAt（z=eye-at, x=z×up, y=z×x）から算出した値。
+    if (g_CameraMode == 1)
+    {
+        right[0] = -1.0f; right[1] = 0.0f; right[2] = 0.0f;
+        up[0]    =  0.0f; up[1]    = 1.0f; up[2]    = 0.0f;
+    }
 
     const auto& insts = g_Effect.Instances();
     const int   count = (int)insts.size();
@@ -1898,6 +1945,29 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
                 if (!NextToken(p, num, MAX_PATH)) return 2;
                 g_Pitch = (float)atof(num);
                 Log("[shot] pitch=%.4f", g_Pitch);
+                continue;
+            }
+
+            // カメラの座標系（ffxitool5 の View/Projection を再現する）
+            //   ffxi : RH / eye=(0,0.05,-5) / up=+Y / fov45 / aspect 4:3 / zn1 / zf20
+            if (_stricmp(tok, "--camera") == 0)
+            {
+                char mode[MAX_PATH] = {};
+                if (!NextToken(p, mode, MAX_PATH)) return 2;
+                if      (_stricmp(mode, "ffxi")  == 0) { g_CameraMode = 1; Log("[shot] camera=ffxi"); }
+                else if (_stricmp(mode, "orbit") == 0) { g_CameraMode = 0; Log("[shot] camera=orbit"); }
+                else { Log("[shot] unknown camera: %s", mode); return 2; }
+                continue;
+            }
+
+            // 座標軸の表示（--axes on）。カメラの向き・左右反転の確認用
+            if (_stricmp(tok, "--axes") == 0)
+            {
+                char mode[MAX_PATH] = {};
+                if (!NextToken(p, mode, MAX_PATH)) return 2;
+                if      (_stricmp(mode, "on")  == 0) g_ShowAxes = true;
+                else if (_stricmp(mode, "off") == 0) g_ShowAxes = false;
+                else { Log("[shot] unknown axes: %s", mode); return 2; }
                 continue;
             }
 
