@@ -24,6 +24,7 @@ struct CBData
     XMFLOAT4   color;
     XMFLOAT4   uv;          // uvRect = (u0, v0, u1, v1)。0x21 のフレーム矩形
     XMFLOAT4   opt;         // x = 色順（0: RGB / 1: BGR 入替）
+                            // y = アルファクリップ有効 / z = しきい値 (0..1)
 };
 
 static const char* kShader =
@@ -59,6 +60,9 @@ static const char* kShader =
 "{\n"
 "    float4 t = gTex.Sample(gSmp, i.uv);\n"
 "    if (gOpt.x > 0.5) t.rgb = t.bgr;   // FFXI の TIM は BGRA 格納\n"
+"    // アルファクリップ（D3D8 の ALPHATEST 相当）。gOpt.y>0.5 のときだけ働く。\n"
+"    //   D3D11 には固定機能のアルファテストが無いので discard で置き換える。\n"
+"    if (gOpt.y > 0.5 && t.a * i.col.a < gOpt.z) discard;\n"
 "    // FFXI のエフェクトは「RGB ほぼ 0 ＋ alpha に形状」。透過なしで描くと黒い板になる。\n"
 "    // 参照（fire2noalpha.mp4）と同じ挙動になるよう、RGB と alpha をそのまま返す。\n"
 "    return float4(t.rgb * i.col.rgb * 1.5, t.a * i.col.a);\n"
@@ -78,6 +82,8 @@ namespace
     ID3D11BlendState*        g_Blends[GFX_BLEND_COUNT] = {};
     GfxBlendMode             g_BlendMode = GFX_BLEND_ALPHA;
     bool                     g_ColorSwap = false;   // 既定 RGB（テクスチャは RGBA として正しく読めている）
+    bool                     g_AlphaClip = false;   // アルファクリップ（PS の discard）
+    int                      g_AlphaRef  = 128;     // 0..255（128 = 0.5）
     ID3D11RasterizerState*   g_Raster  = nullptr;
     ID3D11SamplerState*      g_Sampler = nullptr;
     ID3D11VertexShader*      g_VS      = nullptr;
@@ -159,18 +165,19 @@ bool GfxInit(HWND hwnd, int width, int height)
     //--------------------------------------------------------------
     // ステート（合成モード別 / Z 書き込みなし）
     //--------------------------------------------------------------
-    struct BlendPreset { D3D11_BLEND src; D3D11_BLEND dst; };
+    struct BlendPreset { BOOL enable; D3D11_BLEND src; D3D11_BLEND dst; };
     static const BlendPreset kBlendPresets[GFX_BLEND_COUNT] =
     {
-        { D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_ONE           },   // GFX_BLEND_ALPHA_ADD
-        { D3D11_BLEND_ONE,       D3D11_BLEND_ONE           },   // GFX_BLEND_ADD
-        { D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_INV_SRC_ALPHA },   // GFX_BLEND_ALPHA
+        { TRUE,  D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_ONE           },   // GFX_BLEND_ALPHA_ADD
+        { TRUE,  D3D11_BLEND_ONE,       D3D11_BLEND_ONE           },   // GFX_BLEND_ADD
+        { TRUE,  D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_INV_SRC_ALPHA },   // GFX_BLEND_ALPHA
+        { FALSE, D3D11_BLEND_ONE,       D3D11_BLEND_ZERO          },   // GFX_BLEND_NONE（クリップ用）
     };
 
     for (int i = 0; i < GFX_BLEND_COUNT; ++i)
     {
         D3D11_BLEND_DESC blendDesc = {};
-        blendDesc.RenderTarget[0].BlendEnable           = TRUE;
+        blendDesc.RenderTarget[0].BlendEnable           = kBlendPresets[i].enable;
         blendDesc.RenderTarget[0].SrcBlend              = kBlendPresets[i].src;
         blendDesc.RenderTarget[0].DestBlend             = kBlendPresets[i].dst;
         blendDesc.RenderTarget[0].BlendOp               = D3D11_BLEND_OP_ADD;
@@ -313,6 +320,16 @@ void GfxSetBlendMode(GfxBlendMode mode)
 
 GfxBlendMode GfxGetBlendMode() { return g_BlendMode; }
 
+void GfxSetAlphaClip(bool on, int ref255)
+{
+    g_AlphaClip = on;
+    if (ref255 < 0)   ref255 = 0;
+    if (ref255 > 255) ref255 = 255;
+    g_AlphaRef = ref255;
+}
+bool GfxAlphaClip() { return g_AlphaClip; }
+int  GfxAlphaRef()  { return g_AlphaRef; }
+
 void GfxSetColorSwap(bool bgr) { g_ColorSwap = bgr; }
 bool GfxGetColorSwap() { return g_ColorSwap; }
 
@@ -323,6 +340,7 @@ const char* GfxBlendModeName(GfxBlendMode mode)
     case GFX_BLEND_ALPHA_ADD: return "alpha_add";
     case GFX_BLEND_ADD:       return "add";
     case GFX_BLEND_ALPHA:     return "alpha";
+    case GFX_BLEND_NONE:      return "none";
     default:                  return "?";
     }
 }
@@ -385,7 +403,10 @@ void GfxDrawQuad(const float center[3], const float axisRight[3], const float ax
     cb->color  = XMFLOAT4(rgba[0], rgba[1], rgba[2], rgba[3]);
     cb->uv     = (uvRect != nullptr) ? XMFLOAT4(uvRect[0], uvRect[1], uvRect[2], uvRect[3])
                                      : XMFLOAT4(0.0f, 0.0f, 1.0f, 1.0f);
-    cb->opt    = XMFLOAT4(g_ColorSwap ? 1.0f : 0.0f, 0.0f, 0.0f, 0.0f);
+    cb->opt    = XMFLOAT4(g_ColorSwap ? 1.0f : 0.0f,
+                          g_AlphaClip ? 1.0f : 0.0f,
+                          (float)g_AlphaRef / 255.0f,
+                          0.0f);
 
     g_Context->Unmap(g_CB, 0);
 

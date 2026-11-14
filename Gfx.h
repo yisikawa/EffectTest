@@ -43,12 +43,24 @@ enum GfxBlendMode
     GFX_BLEND_ALPHA_ADD = 0,
     GFX_BLEND_ADD       = 1,
     GFX_BLEND_ALPHA     = 2,
-    GFX_BLEND_COUNT     = 3,
+    GFX_BLEND_NONE      = 3,   // ブレンド無効（アルファクリップ専用）
+    GFX_BLEND_COUNT     = 4,
 };
 
 void         GfxSetBlendMode(GfxBlendMode mode);
 GfxBlendMode GfxGetBlendMode();
 const char*  GfxBlendModeName(GfxBlendMode mode);
+
+//------------------------------------------------------------------
+//  アルファクリップ（D3D8 の ALPHATESTENABLE/ALPHAREF/ALPHAFUNC 相当）
+//    D3D11 には固定機能のアルファテストが無いため、PS で
+//      if (texA * colA < ref) discard;
+//    を行う。ref は 0..255（既定 128 = 0.5）。
+//    ※ ffxitool5 はアルファテストを使っておらず、この機能は当方の追加モード。
+//------------------------------------------------------------------
+void GfxSetAlphaClip(bool on, int ref255);
+bool GfxAlphaClip();
+int  GfxAlphaRef();
 
 // テクスチャの色順（FFXI の TIM は BGRA 格納のため、既定で B/R を入れ替える）
 void GfxSetColorSwap(bool bgr);

@@ -1672,6 +1672,7 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
                 if      (_stricmp(mode, "alpha_add") == 0) GfxSetBlendMode(GFX_BLEND_ALPHA_ADD);
                 else if (_stricmp(mode, "add")       == 0) GfxSetBlendMode(GFX_BLEND_ADD);
                 else if (_stricmp(mode, "alpha")     == 0) { GfxSetBlendMode(GFX_BLEND_ALPHA); g_BlendAuto = false; }
+                else if (_stricmp(mode, "none")      == 0) { GfxSetBlendMode(GFX_BLEND_NONE);  g_BlendAuto = false; }
                 else if (_stricmp(mode, "auto")      == 0) g_BlendAuto = true;
                 else { Log("[shot] unknown blend: %s", mode); return 2; }
                 continue;
@@ -1972,6 +1973,29 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
                 if      (_stricmp(mode, "on")  == 0) g_ShowAxes = true;
                 else if (_stricmp(mode, "off") == 0) g_ShowAxes = false;
                 else { Log("[shot] unknown axes: %s", mode); return 2; }
+                continue;
+            }
+
+            // アルファクリップ（D3D8 の ALPHATEST 相当）。--blend none と組み合わせると
+            //   「ブレンドせずクリップ」になる。既定 off（従来のブレンド）。
+            if (_stricmp(tok, "--alphaclip") == 0)
+            {
+                char mode[MAX_PATH] = {};
+                if (!NextToken(p, mode, MAX_PATH)) return 2;
+                if      (_stricmp(mode, "on")  == 0) GfxSetAlphaClip(true,  GfxAlphaRef());
+                else if (_stricmp(mode, "off") == 0) GfxSetAlphaClip(false, GfxAlphaRef());
+                else { Log("[shot] unknown alphaclip: %s", mode); return 2; }
+                Log("[shot] alphaclip=%s ref=%d", GfxAlphaClip() ? "on" : "off", GfxAlphaRef());
+                continue;
+            }
+            if (_stricmp(tok, "--alpharef") == 0)
+            {
+                char num[MAX_PATH] = {};
+                if (!NextToken(p, num, MAX_PATH)) return 2;
+                const int v = atoi(num);
+                if (v < 0 || v > 255) { Log("[shot] alpharef out of range: %d", v); return 2; }
+                GfxSetAlphaClip(GfxAlphaClip(), v);
+                Log("[shot] alpharef=%d", GfxAlphaRef());
                 continue;
             }
 
