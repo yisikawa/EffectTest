@@ -23,6 +23,7 @@ struct BaseGenerator
     uint16_t frames = 0;
     uint8_t  count  = 0;
     uint8_t  flag   = 0;
+    char     linkName[5] = {};   // +0xAC の 4 文字名（0x20 の借用に使う）
 };
 
 class EffectBase

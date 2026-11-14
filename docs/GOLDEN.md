@@ -167,3 +167,24 @@ tools\RingStats.ps1 -Path out.png
 | 2026-11-12 | 初版。レビュー（`docs/REVIEW-2026-11-10-Issues-And-Fixes.md`）の修正に伴い全面再基準化。`keys` / `texnames` / `rebuild` / `missing` を新規ゴールデンに追加 |
 | 2026-11-12 | **円周配置**（`0x06`/`0x1F`）を反映して `--shot` を再基準化。形状指標（`RingStats.ps1` の aspect/fill/hollow）を追加 |
 | 2026-11-12 | 配置を**粒子番号の黄金角で均等割り**に変更（乱数だとムラが出て線に見える）。`--arrange line\|ring\|spiral`、`--ringplane xy\|xz\|yz`、`--spiralturns` を追加し、既定を `ring` + `ringscale 4` に。`docs/shots/` に比較画像（line/ring/spiral）を追加 |
+
+---
+
+## 3. Cure `tgt0`（入れ子 Schedule / 2026-11-14 追加）
+
+```powershell
+.\x64\Release\EffectTest.exe --shot "$ROM\10\9.DAT" tgt0.png --frames 260 --sched tgt0
+tools\ShotStats.ps1 -Path tgt0.png
+```
+
+| 項目 | 期待値 |
+|---|---|
+| `nonBg` / `maxSum` | **2,488 / 322** |
+| ログ | `[build] sched=tgt0` |
+| ログ | `[sub] mdam: base insts=3 at frame=200 ops=01 2B 00` |
+| 解消 | `[spawn] generator not found: mdam` が出ない（11\17 も同様） |
+
+`mdam` は **ベース DAT（`ROM\0\0.DAT`）の 0x07**（offset 0x81780 / 128 B / `01 2B 00`）。
+旧実装はローカル DAT しか探さず、`mdam` を「未解決 generator」として捨てていた。
+詳細: `docs/ANALYSIS-Cure-tgt0-2026-11-14.md`
+

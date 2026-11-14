@@ -136,6 +136,7 @@ EffectTest.exe --action "<DAT>"                # その DAT の 0x07 ブロッ�
 EffectTest.exe --action "<DAT>" vatk           # 指定アクションの命令列
 EffectTest.exe --selftest "<DAT>"              # Effect としてのタイムライン検証
 EffectTest.exe --shot "<DAT>" out.png --nodetypes ffxi --opstat   # ffxitool5 非対応 type を対象外にして集計
+EffectTest.exe --shot "<DAT>" out.png --frames 260 --sched tgt0   # main 以外の 0x07 を再生
 ```
 
 - **`--nodetypes ffxi|all`**（既定 `all`）: `ffxi` にすると ffxitool5 が `Doesnt work` と表示する type を**対象外**として実行しません（`--opstat` に `skip 0x..` を出します）。詳細は `docs/ANALYSIS-ffxitool5-NODETYPES-2026-11-14.md`。
@@ -145,6 +146,7 @@ EffectTest.exe --shot "<DAT>" out.png --nodetypes ffxi --opstat   # ffxitool5 �
   - **`texnames  = N texspecific = N`** — `0x20` の数と specific 名の数。**一致が正常**。
   - **`rebuild   = ok (...)`** — 同一 `EffectContext` で 2 回 `Build` しても索引が累積しないこと。
   - **`missing   = N generator(s) unresolved`** — タイムラインが参照した generator 名のうち解決できなかった数（`[spawn] generator not found: …` をログにも出す）。
+- **`--sched <name>`**: `--shot` で `main` 以外の 0x07 Schedule を再生します（例: Cure `tgt0`）。op 0x03 の入れ子 Schedule は **ローカル DAT → ベース DAT（`ROM\0\0.DAT`）** の順で解決し、`[sub] <name>: base|local insts=N at frame=F ops=..` をログに出します。
 - 出力ファイルは**上書き**ですが、実行直後の読み取りは競合することがあるため、`Start-Sleep -Milliseconds 300` を挟むか `file      = ...` 行で対象 DAT を確認してください。
 - 必要資源（generator / texture / base）はアプリ非依存の `tools\EffectRes.ps1` で算出できます（`[res] SUMMARY ...`）。
 - **入れ子 Schedule**: `op 0x03` の名前が `0x07` を指す場合、その Schedule を並行実行します（`--selftest` の **`subtl    = N`**）。例: `12\43` の `main` は `hit1` を起動（`subtl = 1`）。

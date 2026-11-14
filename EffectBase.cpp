@@ -32,6 +32,11 @@ bool EffectBase::Load(ID3D11Device* device, const char* datPath)
             memcpy(&g.frames, p + 0x76, 2);
             g.count = p[0x78];
             g.flag  = p[0x79];
+            if (c.size > 0xB0)
+            {
+                memcpy(g.linkName, p + 0xAC, 4);
+                g.linkName[4] = '\0';
+            }
 
             uint32_t o = 0;
             memcpy(&o, p + 0x80, 4); g.tblA = g.payloadOff + (o - 0x90);

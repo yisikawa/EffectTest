@@ -401,6 +401,8 @@ void EffectContext::ClearIndex()
     m_TexSpecific.clear();      // ← 以前はクリア漏れ（m_TexNames とずれていた）
     m_Instances.clear();
     m_Subs.clear();             // 入れ子 Schedule も旧 DAT を指したままにしない
+    m_BaseGens.clear();         // base 0x05 の変換キャッシュ
+    m_BaseSubs = 0;
     m_MissingGenerators = 0;
 }
 
@@ -720,9 +722,9 @@ void EffectContext::ExecInst(const TimelineInst& in)
 }
 
 // 0x07 チャンクの命令列（+0x50 起点）を読み出す
-bool EffectContext::ParseTimeline(const DatChunk& c, std::vector<TimelineInst>* out) const
+bool EffectContext::ParseTimeline(const DatFile& dat, const DatChunk& c, std::vector<TimelineInst>* out) const
 {
-    if (m_Dat == nullptr || out == nullptr) return false;
+    if (out == nullptr) return false;
     out->clear();
     if (c.size <= 0x50) return false;
 
@@ -731,7 +733,7 @@ bool EffectContext::ParseTimeline(const DatChunk& c, std::vector<TimelineInst>* 
     uint32_t pos = start;
     while (pos + 8 <= end)
     {
-        const uint8_t* p = m_Dat->At(pos);
+        const uint8_t* p = dat.At(pos);
         if (p == nullptr) break;
 
         TimelineInst in = {};
@@ -757,29 +759,97 @@ bool EffectContext::ParseTimeline(const DatChunk& c, std::vector<TimelineInst>* 
 // op 0x03 の名前が 0x07（別 Schedule）を指すとき、その命令列を入れ子で起動する
 bool EffectContext::StartSubTimeline(const char* name4)
 {
-    if (m_Dat == nullptr || name4 == nullptr) return false;
+    if (m_Dat == nullptr) return false;
+    return StartSubTimelineFrom(*m_Dat, name4);
+}
+
+// 0x07 の解決順: 呼び出し元の DAT → base DAT（ROM\0\0.DAT）
+//   Cure 10/9 の tgt0 は `op=0x03 name=mdam` を持ち、mdam は **base の 0x07**
+//   （base offset 0x81780 / 128 B、命令は 0x01, 0x2B, 0x00）。
+//   ffxitool5 も DAT 外の参照を解決するため、base を第 2 候補にする。
+bool EffectContext::StartSubTimelineFrom(const DatFile& src, const char* name4)
+{
+    if (name4 == nullptr) return false;
     if (m_Subs.size() >= 16) return false;                       // 暴走防止
 
     for (const SubTimeline& s : m_Subs)
         if (memcmp(s.name.c_str(), name4, 4) == 0) return true;   // 起動済み
 
-    const DatChunk* c = m_Dat->Find(name4, 0x07);
+    const DatChunk* c = src.Find(name4, 0x07);
+    const DatFile*  owner = &src;
+    bool fromBase = false;
+    if (c == nullptr && m_Base != nullptr && &src != &m_Base->Dat())
+    {
+        c = m_Base->FindTimeline(name4);
+        if (c != nullptr) { owner = &m_Base->Dat(); fromBase = true; }
+    }
     if (c == nullptr) return false;
 
     SubTimeline s;
     s.name.assign(name4, 4);
-    if (!ParseTimeline(*c, &s.insts)) return false;
+    s.dat = owner;
+    if (!ParseTimeline(*owner, *c, &s.insts)) return false;
 
+    if (fromBase) ++m_BaseSubs;
+
+    // 起動した Schedule の命令列（op のみ）を残す。base の 0x2B のように
+    //   当方が未実装の op が含まれる場合、ここで気付けるようにする。
+    char ops[128] = {};
+    size_t w = 0;
+    for (const TimelineInst& t : s.insts)
+    {
+        if (w + 4 >= sizeof(ops)) break;
+        sprintf_s(ops + w, sizeof(ops) - w, "%02X ", (unsigned)t.op);
+        w += 3;
+        if (t.op == 0x00) break;
+    }
+    EffectLogLine("[sub] %s: %s insts=%zu at frame=%d ops=%s", name4, fromBase ? "base" : "local",
+                  s.insts.size(), (int)m_Frame, ops);
     m_Subs.push_back(std::move(s));
     return true;
 }
 
+// base DAT の 0x05 → GeneratorBlock（テクスチャフレームと 0x1F は未解析）
+//   MotionInstance は gen ポインタを保持するので、unique_ptr の安定領域に置く。
+const GeneratorBlock* EffectContext::FindBaseGenerator(const char* name4)
+{
+    if (m_Base == nullptr || name4 == nullptr) return nullptr;
+
+    for (const std::unique_ptr<GeneratorBlock>& p : m_BaseGens)
+        if (p && memcmp(p->chunk.name, name4, 4) == 0) return p.get();
+
+    const BaseGenerator* bg = m_Base->FindGenerator(name4);
+    if (bg == nullptr) return nullptr;
+
+    std::unique_ptr<GeneratorBlock> g(new GeneratorBlock());
+    g->chunk       = bg->chunk;
+    g->payloadOff  = bg->payloadOff;
+    g->payloadSize = bg->payloadSize;
+    g->tblA = bg->tblA; g->tblB = bg->tblB; g->tblC = bg->tblC; g->tblD = bg->tblD;
+    g->id     = bg->id;
+    g->frames = bg->frames;
+    g->count  = bg->count;
+    g->flag   = bg->flag;
+    memcpy(g->linkName, bg->linkName, sizeof(g->linkName));
+
+    m_BaseGens.push_back(std::move(g));
+    EffectLogLine("[spawn] base generator: %s (link=%s)", name4, m_BaseGens.back()->linkName);
+    return m_BaseGens.back().get();
+}
+
 void EffectContext::ExecSub(SubTimeline& s, const TimelineInst& in)
 {
+    const DatFile* sdat = (s.dat != nullptr) ? s.dat : m_Dat;
+
     switch (in.op)
     {
     case 0x02:
-        Spawn(in.name, in.param / 60.0f, (int)in.op);
+        Spawn(in.name, in.param / 60.0f, (int)in.op, sdat);
+        break;
+
+    case 0x03:      // 入れ子 Schedule（base の 0x07 も対象）
+        if (sdat == nullptr || !StartSubTimelineFrom(*sdat, in.name))
+            Spawn(in.name, in.param / 60.0f, (int)in.op, sdat);
         break;
 
     case 0x2A:
@@ -795,9 +865,17 @@ void EffectContext::ExecSub(SubTimeline& s, const TimelineInst& in)
     }
 }
 
-void EffectContext::Spawn(const char* name4, float startSec, int op)
+void EffectContext::Spawn(const char* name4, float startSec, int op, const DatFile* src)
 {
-    const GeneratorBlock* g = FindGenerator(name4);
+    const DatFile* d = (src != nullptr) ? src : m_Dat;
+
+    // 生成元 DAT がローカルならローカル索引、base の Schedule からなら base の 0x05 を引く
+    const GeneratorBlock* g = nullptr;
+    if (d == m_Dat)
+        g = FindGenerator(name4);
+    else if (d != nullptr)
+        g = FindBaseGenerator(name4);
+
     if (g == nullptr)
     {
         // 問題 6: 黙って return すると「表示が消えるだけ」で原因が分からない。
@@ -818,7 +896,7 @@ void EffectContext::Spawn(const char* name4, float startSec, int op)
     if (tex < 0 && g->geoName16[0] != '\0') tex = FindTextureIndexBy16(g->geoName16);
     if (tex < 0 && g->geoName[0] != '\0') tex = FindTextureIndexByGroup(g->geoName);
     if (tex < 0 && g->geoName[0] != '\0') tex = FindTextureIndexBySpecific(g->geoName);
-    mi.Reset(m_Dat, g, startSec, tex, op, m_Geo);
+    mi.Reset(d, g, startSec, tex, op, m_Geo);
 
     // 描画に使う SRV（借用）: ローカル 0x20 → base の 0x20 の順で解決
     if (tex >= 0 && tex < (int)m_Textures.size())

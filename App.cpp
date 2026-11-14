@@ -54,6 +54,7 @@ namespace
     bool  g_ShowAxes  = false;    // X: 座標軸の表示（既定 OFF。起動時は何も描かない）
     float g_SizeScale = 1.0f;     // ビルボードの基準半径
     char  g_OnlyGen[9] = {};      // --only <name>: 指定 generator だけを描く（空 = 全部）
+char  g_ShotSched[9] = {};    // --sched <name>: --shot で再生する 0x07（空 = main）
     // UV オフセット（sub+0xB4/0xB8）。0=off / 1=0..1 巡回 / 2=セル内巡回
     //   問題 2: bool だと `cell`(=2) が true(=1) に化けて 2 が到達不能になる。
     int   g_UvScroll  = 0;
@@ -363,7 +364,21 @@ static bool LoadDatFile(const char* path)
     g_Effect.ReleaseTextures();
     if (!g_Dat.Load(path)) return false;
 
-    g_Effect.Build(g_Dat);
+    // --sched <name>: main 以外の 0x07 を再生する（未指定なら従来どおり main）
+    //   BuildInternal は未知名を「最初の 0x07」にフォールバックするため、
+    //   指定名が実在するかをここで確認する（打ち間違いを黙って再生しない）。
+    bool built = false;
+    if (g_ShotSched[0] != '\0')
+    {
+        if (g_Dat.Find(g_ShotSched, 0x07) != nullptr)
+            built = g_Effect.BuildFromChunk(g_Dat, g_ShotSched);
+        else
+            Log("[shot] sched not found: %s (main を使用)", g_ShotSched);
+    }
+    if (!built)
+        g_Effect.Build(g_Dat);
+
+    Log("[build] sched=%s", built ? g_ShotSched : "main");
     g_Effect.BuildTextures(GfxDevice());
     g_DatPath  = path;
     g_TexIndex = 0;
@@ -2046,6 +2061,16 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
                 continue;
             }
 
+            // 再生する Schedule（0x07）を指定する。tgt0 のような入れ子の検証用
+            if (_stricmp(tok, "--sched") == 0)
+            {
+                char nm[MAX_PATH] = {};
+                if (!NextToken(p, nm, MAX_PATH)) return 2;
+                strncpy_s(g_ShotSched, nm, _TRUNCATE);
+                Log("[shot] sched=%s", g_ShotSched);
+                continue;
+            }
+
             if (_stricmp(tok, "--trace") == 0)
             {
                 // サブ（粒子）ごとの状態を CSV に出す（GUI の T キーと同じ形式）
@@ -2327,12 +2352,13 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
             }
         }
 
-        Log("[shot] dat=%s png=%s blend=%s uvmode=%s color=%s size=%s frames=%d inst=%zu tex=%zu ok=%d",
+        Log("[shot] dat=%s png=%s blend=%s uvmode=%s color=%s size=%s frames=%d inst=%zu tex=%zu subs=%zu base=%d ok=%d",
             dat, png, GfxBlendModeName(GfxGetBlendMode()),
             g_Effect.UseTexFrames() ? "0x21" : "full",
             GfxGetColorSwap() ? "bgr" : "rgb",
             g_SizeMode == 1 ? "quad" : (g_SizeMode == 2 ? "square" : (g_SizeMode == 3 ? "meter" : "scale")), frames,
-            g_Effect.Instances().size(), g_Effect.Textures().size(), ok ? 1 : 0);
+            g_Effect.Instances().size(), g_Effect.Textures().size(),
+            g_Effect.SubTimelineCount(), g_Effect.BaseSubTimelineCount(), ok ? 1 : 0);
 
         g_Effect.ReleaseTextures();
         g_Dat.Unload();

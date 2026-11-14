@@ -15,6 +15,8 @@
 #include "Dat.h"
 #include "Tim.h"
 #include <d3d11.h>
+#include <memory>
+#include <string>
 #include <vector>
 
 //----------------------------------------------------------------------
@@ -362,8 +364,10 @@ public:
     int FindTextureIndexBySpecific(const char* name8) const;   // +0xAC のリンク名 → 0x20 の番号（無ければ -1）
     int FindTextureIndexBy16(const char* name16) const;        // 0x1F の 16 文字名 → 0x20 の番号
     int FindTextureIndexByGroup(const char* name8) const;      // 0x1F の先頭 8 文字（グループ）→ 0x20
-    void SetBaseTexture(const class EffectBase* base) { m_Base = base; }  // base の 0x20 を借用する
+    void SetBaseTexture(const class EffectBase* base) { m_Base = base; }  // base の 0x20 / 0x07 / 0x05 を借用する
     size_t SubTimelineCount() const { return m_Subs.size(); }
+    // base DAT（ROM\0\0.DAT）から起動した入れ子 Schedule の数（--shot のログ用）
+    int    BaseSubTimelineCount() const { return m_BaseSubs; }
     // テクスチャ索引の整合検査用（--selftest）。0x20 の数と specific 名の数は一致する
     size_t TexNameCount()     const { return m_TexNames.size(); }
     size_t TexSpecificCount() const { return m_TexSpecific.size(); }
@@ -377,6 +381,7 @@ private:
     {
         std::string               name;
         std::vector<TimelineInst> insts;
+        const DatFile*            dat = nullptr;   // 命令列と生成元の DAT（base の 0x07 なら base）
         size_t                    ip = 0;
         float                     timeLeft = 0.0f;
     };
@@ -384,12 +389,19 @@ private:
     void ExecInst(const TimelineInst& in);
     void ExecSub(SubTimeline& s, const TimelineInst& in);
     bool StartSubTimeline(const char* name4);
-    bool ParseTimeline(const DatChunk& c, std::vector<TimelineInst>* out) const;
-    void Spawn(const char* name4, float startSec, int op);
+    // src の 0x07 を探し、無ければ base DAT の 0x07 を探す（op 0x03 の入れ子）
+    bool StartSubTimelineFrom(const DatFile& src, const char* name4);
+    bool ParseTimeline(const DatFile& dat, const DatChunk& c, std::vector<TimelineInst>* out) const;
+    void Spawn(const char* name4, float startSec, int op, const DatFile* src = nullptr);
+    // base DAT の 0x05 を GeneratorBlock に変換して返す（MotionInstance がポインタを保持するため
+    //   unique_ptr で安定した領域に置く）
+    const GeneratorBlock* FindBaseGenerator(const char* name4);
     bool BuildInternal(const DatFile& dat, const char* mainChunkName);
     // テクスチャ索引系の配列をまとめてクリアする（問題 3: クリア漏れの再発防止）
     void ClearIndex();
     std::vector<SubTimeline>    m_Subs;
+    std::vector<std::unique_ptr<GeneratorBlock>> m_BaseGens;   // base 0x05 の変換キャッシュ
+    int                         m_BaseSubs = 0;                // base 0x07 から起動した数
 
     const DatFile*              m_Dat = nullptr;
     const class EffectBase*     m_Base = nullptr;   // base（ROM\0\0.DAT）のテクスチャ借用元
