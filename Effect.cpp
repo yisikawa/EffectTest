@@ -478,6 +478,14 @@ bool EffectContext::BuildInternal(const DatFile& dat, const char* mainChunkName)
             {
                 uint16_t bil = 1;
                 memcpy(&bil, q + 0x04, 2);
+                // +0x04 は 0=平面 / 1=ビルボード。ただし generator によっては 0/1 以外
+                //   （実測: prn0/prn1 は 0x4200 = 16896）になる。0/1 以外はビルボード扱いに
+                //   丸め、生値はログに残す（flat 判定などを汚さないため）。
+                if (bil > 1)
+                {
+                    EffectLogLine("[gen] %s: bil raw=0x%04X (billboard 扱い)", g.chunk.name, bil);
+                    bil = 1;
+                }
                 g.bil = (int)bil;
 
                 // +0x06 はアタッチ部位 ID（参考: 0x001=中心, 0x081=右腕, 0x0C1=頭 …）
