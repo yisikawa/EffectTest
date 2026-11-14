@@ -1728,6 +1728,26 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
                 continue;
             }
 
+            // ffxitool5 準拠の type スコープ（既定 all）
+            //   ffxi: ffxitool5 が「Doesnt work」と表示する type を対象外にする
+            if (_stricmp(tok, "--nodetypes") == 0)
+            {
+                char mode[MAX_PATH] = {};
+                if (!NextToken(p, mode, MAX_PATH)) return 2;
+                if (_stricmp(mode, "ffxi") == 0)
+                {
+                    EffectSetNodeScope(1);
+                    Log("[shot] nodetypes=ffxi (Doesn't work の type は対象外)");
+                }
+                else if (_stricmp(mode, "all") == 0)
+                {
+                    EffectSetNodeScope(0);
+                    Log("[shot] nodetypes=all");
+                }
+                else { Log("[shot] unknown nodetypes: %s", mode); return 2; }
+                continue;
+            }
+
             if (_stricmp(tok, "--emit") == 0)
             {
                 char mode[MAX_PATH] = {};
@@ -2288,10 +2308,22 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
             for (int vm = 1; vm <= 2; ++vm)
             {
                 const std::vector<OpCount> st = EffectOpStat(vm);
-                if (st.empty()) continue;
-                Log("[opstat] VM#%d : %zu kinds", vm, st.size());
-                for (const OpCount& oc : st)
-                    Log("[opstat]   op 0x%02X x%d", oc.op, oc.count);
+                if (!st.empty())
+                {
+                    Log("[opstat] VM#%d : %zu kinds", vm, st.size());
+                    for (const OpCount& oc : st)
+                        Log("[opstat]   op 0x%02X x%d", oc.op, oc.count);
+                }
+
+                // --nodetypes ffxi: ffxitool5 が「Doesnt work」と出す type は
+                //   対象外として実行しない（読み飛ばした件数を出す）
+                const std::vector<OpCount> sk = EffectNodeSkipStat(vm);
+                if (!sk.empty())
+                {
+                    Log("[opstat] VM#%d : 対象外(Doesn't work) %zu kinds", vm, sk.size());
+                    for (const OpCount& oc : sk)
+                        Log("[opstat]   skip 0x%02X x%d", oc.op, oc.count);
+                }
             }
         }
 

@@ -502,3 +502,23 @@ pn0-1..2     → prn0
 したがって ffxitool5 を参照できるのは:
 - **gr00 / rn00 / kr10 の位置・サイズ・α・合成**
 - prn / kr1x / kr3x は **AltanaView の参照のみ**を使う
+
+---
+
+## 9. 追補（2026-11-14）: `Doesnt work` の範囲を確定
+
+`Doesnt work` は **データ1〜4 の type ディスパッチ（`FUN_004041b0` / 0x4041b0〜0x4045fd）の default 節**が
+出す「type 単位の未実装通知」で、文字列は 4 本ある:
+
+```
+0x430360 [1] / 0x4302a8 [2] / 0x43027c [3] / 0x430250 [4]
+```
+
+- **データ1（main+0x80）と データ4（+0x8C）は全 type が対象外**（switch が無い）。
+- データ2（+0x84）の既知: `1,2,3,6,7,8,9,0xA,0xB,0xC,0xF..0x13,0x16,0x1E,0x1F,0x21..0x2F,0x41`
+- データ3（+0x88）の既知: `2,5,8,0xF..0x1D,0x27,0x28`
+
+→ **`Doesnt work` の type は対象外**とする方針を確定し、EffectTest に
+`--nodetypes ffxi|all`（既定 all）を追加した。
+
+詳細・実測・注意: `docs/ANALYSIS-ffxitool5-NODETYPES-2026-11-14.md`

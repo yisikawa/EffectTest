@@ -194,6 +194,32 @@ namespace
     bool  g_Scatter  = false;      // VM#1 0x3A の散布（--scatter）。既定 off（意味未確定）
     bool  g_BigGlow  = false;      // Scale>=0.5 の大判粒子を 1 個だけ出す（--ffxi on で有効）
     int  g_OpStat[3][256] = {};    // [vm][op] の実行回数（--opstat）
+    int  g_NodeScope = 0;          // 0=all / 1=ffxi（--nodetypes ffxi）
+    int  g_NodeSkip[3][256] = {};  // スコープ外で読み飛ばした type の回数
+
+    //------------------------------------------------------------------
+    // ffxitool5（FUN_004041b0 / 0x4041b0..0x4045fd）が「Doesnt work」を
+    // 出さない type＝そのアプリが実装している type。
+    //   データ1（+0x80, tblA）: switch 自体が無く **全 type が対象外**
+    //   データ2（+0x84, tblB）: 下の FfxiTypeB が true の type のみ対象
+    //   データ3（+0x88, tblC）: 下の FfxiTypeC が true の type のみ対象
+    //   データ4（+0x8C, tblD）: 全 type が対象外
+    //   ※ データ2 の 0x33-0x36 / 0x39 は 0x19 キー表を解決するだけで
+    //     既知リストには無い（ffxitool5 は Unknown を出す）→ 対象外とする。
+    //------------------------------------------------------------------
+    inline bool FfxiTypeB(uint8_t op)      // データ2（VM#1 の入力）
+    {
+        return op == 0x01 || op == 0x02 || op == 0x03 ||
+               (op >= 0x06 && op <= 0x0C) ||                        // 6,7,8,9,10,0xB,0xC
+               (op >= 0x0F && op <= 0x13) ||
+               op == 0x16 || op == 0x1E || op == 0x1F ||
+               (op >= 0x21 && op <= 0x2F) || op == 0x41;
+    }
+    inline bool FfxiTypeC(uint8_t op)      // データ3（VM#2 の入力）
+    {
+        return op == 0x02 || op == 0x05 || op == 0x08 ||
+               (op >= 0x0F && op <= 0x1D) || op == 0x27 || op == 0x28;
+    }
 
     //------------------------------------------------------------------
     // 円周（楕円）／らせん上への配置（0x06 / 0x1F が使う）
@@ -263,7 +289,22 @@ bool EffectScatter() { return g_Scatter; }
 void EffectOpStatReset()
 {
     for (int v = 0; v < 3; ++v)
-        for (int i = 0; i < 256; ++i) g_OpStat[v][i] = 0;
+        for (int i = 0; i < 256; ++i) { g_OpStat[v][i] = 0; g_NodeSkip[v][i] = 0; }
+}
+
+// ffxitool5 準拠スコープ（--nodetypes）
+void EffectSetNodeScope(int scope) { g_NodeScope = (scope == 1) ? 1 : 0; }
+int  EffectNodeScope() { return g_NodeScope; }
+
+std::vector<OpCount> EffectNodeSkipStat(int vm)
+{
+    std::vector<OpCount> out;
+    if (vm < 1 || vm > 2) return out;
+    for (int i = 0; i < 256; ++i)
+        if (g_NodeSkip[vm][i] > 0) out.push_back(OpCount{ i, g_NodeSkip[vm][i] });
+    std::sort(out.begin(), out.end(),
+              [](const OpCount& a, const OpCount& b) { return a.count > b.count; });
+    return out;
 }
 
 std::vector<OpCount> EffectOpStat(int vm)
@@ -300,6 +341,18 @@ static void Vm1(const MotionInstance& mi, SubUnit& su, const EffectContext& ctx)
         const uint8_t op = (uint8_t)(w0 & 0xFF);
         if (op == 0) break;                       // 終端
         ++g_OpStat[1][op];                        // --opstat 用
+
+        // --nodetypes ffxi: ffxitool5 が「Doesnt work」と出す type は対象外。
+        //   データ1/4 は全 type、データ2/3 は既知リスト外が該当する。
+        //   命令の長さだけ進めて次の命令へ（副作用は一切起こさない）。
+        if (g_NodeScope == 1 && !FfxiTypeB(op))
+        {
+            ++g_NodeSkip[1][op];
+            const uint32_t lenSkip = InstLen(p);
+            if (lenSkip == 0) break;
+            ip += lenSkip * 4;
+            continue;
+        }
 
         const float* arg = reinterpret_cast<const float*>(p + 4);
         const uint32_t dest = w0 >> 13;
@@ -715,6 +768,16 @@ static bool Vm2(const MotionInstance& mi, SubUnit& su, float dt, float rootDurat
         if (op == 0) break;
 
         ++g_OpStat[2][op];                        // --opstat 用
+
+        // --nodetypes ffxi: データ3 の既知リスト外は対象外（VM#1 と同じ扱い）
+        if (g_NodeScope == 1 && !FfxiTypeC(op))
+        {
+            ++g_NodeSkip[2][op];
+            const uint32_t lenSkip = InstLen(p);
+            if (lenSkip == 0) break;
+            ip += lenSkip * 4;
+            continue;
+        }
 
         const float* arg = reinterpret_cast<const float*>(p + 4);
         const uint32_t dest = w0 >> 13;

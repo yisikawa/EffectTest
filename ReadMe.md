@@ -134,9 +134,11 @@ EffectTest.exe --list                          # グループ/項目/解決パ�
 EffectTest.exe --base                          # ベースエフェクト（ROM\0\0.DAT）の索引ダンプ
 EffectTest.exe --action "<DAT>"                # その DAT の 0x07 ブロック一覧
 EffectTest.exe --action "<DAT>" vatk           # 指定アクションの命令列
-EffectTest.exe --selftest "<DAT>"              # Effect としてのタイムライン検証
+EffectTest.exe --selftest "<DAT>"              # Effect としてのタイムライン検証
+EffectTest.exe --shot "<DAT>" out.png --nodetypes ffxi --opstat   # ffxitool5 非対応 type を対象外にして集計
 ```
 
+- **`--nodetypes ffxi|all`**（既定 `all`）: `ffxi` にすると ffxitool5 が `Doesnt work` と表示する type を**対象外**として実行しません（`--opstat` に `skip 0x..` を出します）。詳細は `docs/ANALYSIS-ffxitool5-NODETYPES-2026-11-14.md`。
 - `--selftest` は **`prog=0x50`**（命令列の開始位置）と、各インスタンス行の **`tex=`**（`+0xAC` から解決した `0x20` の番号）・**`link=`**（`+0xAC` の 4 文字名）・**`uv=(u0,v0,u1,v1)`** を出力します。generator 行には **`frm=N`**（同名 `0x21` のフレーム数。無ければ `frm=0(none)`）が出ます。`tex=-1` は `0x1F`/`0x21`/`0x3D` を指す generator では正常（白）。**base（`ROM\0\0.DAT`）の `0x20` は `--shot` で `srv=` が非 0 になることで確認**できます。
 - 2026-11-12 追加の観測点:
   - **`keys      = N ops, N resolved, M unresolved`** — VM#1 のキー op の第 3 dword を `0x19` チャンク名として解決した率。**`unresolved=0` が正常**（`11\17`=8, `11\18`=9, `12\43`=10, `11\22`=33）。

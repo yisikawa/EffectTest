@@ -265,6 +265,17 @@ struct OpCount { int op; int count; };
 void EffectOpStatReset();
 std::vector<OpCount> EffectOpStat(int vm);
 
+// ffxitool5 準拠の type スコープ（--nodetypes）。既定 0 = all（従来動作）
+//   1 = ffxi: ffxitool5（FUN_004041b0）が画面に「Doesnt work」と出す type を
+//             **対象外**として実行しない。
+//            ・データ1（main+0x80 / tblA）とデータ4（+0x8C / tblD）は全 type が対象外
+//            ・データ2（+0x84 / tblB）は既知リスト外が対象外
+//            ・データ3（+0x88 / tblC）は既知リスト外が対象外
+void EffectSetNodeScope(int scope);
+int  EffectNodeScope();
+// 対象外として読み飛ばした type の集計（vm=1: tblB / vm=2: tblC）
+std::vector<OpCount> EffectNodeSkipStat(int vm);
+
 // VM#1 のキー表参照（0x19 名）の解決監査（--selftest / 問題 1 の検証）
 //   ops      : VM#1 のキー op の総数
 //   resolved : 0x19 チャンク名として解決できた数
