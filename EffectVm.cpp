@@ -354,7 +354,17 @@ static void Vm1(const MotionInstance& mi, SubUnit& su, const EffectContext& ctx)
             continue;
         }
 
-        const float* arg = reinterpret_cast<const float*>(p + 4);
+        // 命令長（= 4*len バイト）。引数は (len-1) 個しか存在しない。
+        //   len を無視して p+4/p+8/p+12 を読むと、**次の命令のバイトを float として
+        //   拾ってしまう**（実例: kr10 の `0x08 len=2` は arg0=-0.005 だけなのに、
+        //   arg[2] が次命令 `0x72` の arg0=-0.5 を読み、VM#2 `0x02` が毎フレーム
+        //   Pos.z += -0.5 して z が -36 m まで暴走した）。
+        const uint32_t len = InstLen(p);
+        if (len == 0) break;
+        float argBuf[12] = {};
+        for (uint32_t i = 0; i < 12u && (i + 1u) < len; ++i)
+            memcpy(&argBuf[i], p + 4 + i * 4, 4);
+        const float* arg = argBuf;
         const uint32_t dest = w0 >> 13;
         // 問題 5: Dest() を返す op は最大 3 float を書く。`dest + 4` で判定すれば
         //   f[] の末尾を越えない（static_assert で保証）。
@@ -370,8 +380,8 @@ static void Vm1(const MotionInstance& mi, SubUnit& su, const EffectContext& ctx)
             if (dest < SUB_DEST_N)
             {
                 char nm[5] = {};
-                memcpy(nm, p + 8, 4);
-                const DatChunk* kc = mi.dat->Find(nm, 0x19);
+                if (len >= 3) memcpy(nm, p + 8, 4);   // 3 dword 未満は名前なし
+                const DatChunk* kc = (nm[0] != '\0') ? mi.dat->Find(nm, 0x19) : nullptr;
                 if (kc != nullptr && kc->size > 0x18)
                 {
                     const uint32_t n = (kc->size - 0x18u) / 8u;   // エントリ数（ヘッダに件数は無い）
@@ -708,8 +718,6 @@ static void Vm1(const MotionInstance& mi, SubUnit& su, const EffectContext& ctx)
             break;                                // 未実装 op は無視
         }
 
-        const uint32_t len = InstLen(p);
-        if (len == 0) break;
         ip += len * 4;
     }
 }
@@ -779,7 +787,13 @@ static bool Vm2(const MotionInstance& mi, SubUnit& su, float dt, float rootDurat
             continue;
         }
 
-        const float* arg = reinterpret_cast<const float*>(p + 4);
+        // 命令長で引数の個数を制限する（VM#1 と同じ理由。len-1 個まで）
+        const uint32_t len = InstLen(p);
+        if (len == 0) break;
+        float argBuf[12] = {};
+        for (uint32_t i = 0; i < 12u && (i + 1u) < len; ++i)
+            memcpy(&argBuf[i], p + 4 + i * 4, 4);
+        const float* arg = argBuf;
         const uint32_t dest = w0 >> 13;
         // 問題 5: Vm1 と同じ境界判定（dest + 4 <= SUB_DEST_N）
         float* d = (dest + 4u <= SUB_DEST_N) ? su.sub.Dest(dest) : nullptr;
@@ -900,8 +914,6 @@ static bool Vm2(const MotionInstance& mi, SubUnit& su, float dt, float rootDurat
             break;
         }
 
-        const uint32_t len = InstLen(p);
-        if (len == 0) break;
         ip += len * 4;
     }
 
