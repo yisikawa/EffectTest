@@ -62,7 +62,8 @@ bool  g_ShotLoop   = false;   // --loop on|off: --shot のループ（既定 off
     bool  g_BlendAuto = false;    // --blend auto: テクスチャの黒割合で alpha / add を自動選択
     bool  g_GeoFlat   = false;    // 0x1F の XZ 平面を地面デカールとして描く（--geoflat on）
     int   g_SizeMode  = 3;        // 0: scale / 1: 0x21 quad / 2: 正方形（scale[2]）/ 3: メートル（既定）
-    float g_Gain      = 1.5f;     // 色のゲイン（PS の ×1.5 と等価。--gain で A/B）
+    float g_Gain      = 1.5f;     // 色のゲイン（RGB。MODULATE4X 相当は 4.0。--gain で A/B）
+float g_AlphaGain = 1.0f;     // α のゲイン（ffxitool5 の ALPHAOP=MODULATE4X は 4.0。--alphagain）
     // RGB=0 → 白 / α≤0 → 1 の代替（問題 7）。既定 on（現状維持）、--colorfallback off で A/B
     bool  g_ColorFallback = true;
 
@@ -767,12 +768,7 @@ static void RenderScene(bool present)
                 uvDraw[2] = u0n + uw; uvDraw[3] = v0n + vh;
             }
 
-            // --gain: PS の ×1.5 を相殺して任意のゲインにする（A/B 用）
-            if (g_Gain != 1.5f)
-            {
-                const float k = g_Gain / 1.5f;
-                rgba[0] *= k; rgba[1] *= k; rgba[2] *= k;
-            }
+            // 色のゲインは PS（gGain）で適用する（--gain / --alphagain / --colorop）
 
             GfxDrawQuad(center, axisR, axisU, rgba, uvDraw, srv);
 
@@ -1916,13 +1912,51 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
             }
 
             // 色のゲイン（PS の ×1.5 と等価。既定 1.5）
+            // --gain: RGB の倍率（ffxitool5 の COLOROP=MODULATE4X 相当は 4）
             if (_stricmp(tok, "--gain") == 0)
             {
                 char num[MAX_PATH] = {};
                 if (!NextToken(p, num, MAX_PATH)) return 2;
                 const double f = atof(num);
                 if (f >= 0.0) g_Gain = (float)f;
-                Log("[shot] gain=%.3f", g_Gain);
+                GfxSetColorGain(g_Gain, g_AlphaGain);
+                Log("[shot] gain=%.3f alphagain=%.3f", g_Gain, g_AlphaGain);
+                continue;
+            }
+
+            // --alphagain: α の倍率（ffxitool5 の ALPHAOP=MODULATE4X 相当は 4）
+            if (_stricmp(tok, "--alphagain") == 0)
+            {
+                char num[MAX_PATH] = {};
+                if (!NextToken(p, num, MAX_PATH)) return 2;
+                const double f = atof(num);
+                if (f < 0.0) { Log("[shot] alphagain out of range: %s", num); return 2; }
+                g_AlphaGain = (float)f;
+                GfxSetColorGain(g_Gain, g_AlphaGain);
+                Log("[shot] gain=%.3f alphagain=%.3f", g_Gain, g_AlphaGain);
+                continue;
+            }
+
+            // --colorop ffxi|simple: テクスチャステージの色式
+            //   ffxi   = COLOROP/ALPHAOP MODULATE4X（RGB×4, α×4）… ffxitool5 と同じ
+            //   simple = RGB×1.5, α×1（従来の当方式）
+            if (_stricmp(tok, "--colorop") == 0)
+            {
+                char mode[MAX_PATH] = {};
+                if (!NextToken(p, mode, MAX_PATH)) return 2;
+                if (_stricmp(mode, "ffxi") == 0)
+                {
+                    g_Gain = 4.0f; g_AlphaGain = 4.0f;
+                    GfxSetColorGain(g_Gain, g_AlphaGain);
+                    Log("[shot] colorop=ffxi (modulate4x: rgb x4, a x4)");
+                }
+                else if (_stricmp(mode, "simple") == 0)
+                {
+                    g_Gain = 1.5f; g_AlphaGain = 1.0f;
+                    GfxSetColorGain(g_Gain, g_AlphaGain);
+                    Log("[shot] colorop=simple (rgb x1.5, a x1)");
+                }
+                else { Log("[shot] unknown colorop: %s", mode); return 2; }
                 continue;
             }
 
@@ -1973,6 +2007,18 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
                 if      (_stricmp(mode, "on")  == 0) g_ShowAxes = true;
                 else if (_stricmp(mode, "off") == 0) g_ShowAxes = false;
                 else { Log("[shot] unknown axes: %s", mode); return 2; }
+                continue;
+            }
+
+            // テクスチャを使わず白で描く（色の切り分け用。GUI の W キーと同じ）
+            if (_stricmp(tok, "--notex") == 0)
+            {
+                char mode[MAX_PATH] = {};
+                if (!NextToken(p, mode, MAX_PATH)) return 2;
+                if      (_stricmp(mode, "on")  == 0) g_NoTexture = true;
+                else if (_stricmp(mode, "off") == 0) g_NoTexture = false;
+                else { Log("[shot] unknown notex: %s", mode); return 2; }
+                Log("[shot] notex=%s", g_NoTexture ? "on" : "off");
                 continue;
             }
 
@@ -2139,6 +2185,8 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
                     GfxSetBlendMode(GFX_BLEND_ALPHA_ADD);
                     g_BlendAuto = false;
                     g_Gain = 4.0f;
+                    g_AlphaGain = 4.0f;             // ALPHAOP=MODULATE4X
+                    GfxSetColorGain(g_Gain, g_AlphaGain);
                     g_SizeMode = 0;                 // --size scale
                     EffectSetKeyMode(2);            // --keymode norm
                     EffectSetMoveInt(true);         // --moveint on
@@ -2152,6 +2200,8 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
                     GfxSetBlendMode(GFX_BLEND_ALPHA);
                     g_BlendAuto = false;
                     g_Gain = 1.5f;
+                    g_AlphaGain = 1.0f;
+                    GfxSetColorGain(g_Gain, g_AlphaGain);
                     g_SizeMode = 3;
                     EffectSetKeyMode(0);
                     EffectSetMoveInt(false);

@@ -140,6 +140,7 @@ EffectTest.exe --shot "<DAT>" out.png --frames 260 --sched tgt0   # main 以外�
 EffectTest.exe --shot "<DAT>" out.png --camera ffxi --res 640x480   # ffxitool5 と同じ RH カメラ
 EffectTest.exe --shot "<DAT>" out.png --loop on   # ループ再生（--shot の既定は off = 終了時凍結）
 EffectTest.exe --shot "<DAT>" out.png --alphaclip on --blend none   # アルファクリップ（既定 off）
+EffectTest.exe --shot "<DAT>" out.png --colorop ffxi   # ffxitool5 と同じ色式（RGB×4 / α×4）
 ```
 
 - **`--nodetypes ffxi|all`**（既定 `all`）: `ffxi` にすると ffxitool5 が `Doesnt work` と表示する type を**対象外**として実行しません（`--opstat` に `skip 0x..` を出します）。詳細は `docs/ANALYSIS-ffxitool5-NODETYPES-2026-11-14.md`。
@@ -153,6 +154,7 @@ EffectTest.exe --shot "<DAT>" out.png --alphaclip on --blend none   # アルフ�
 - **`--camera ffxi|orbit`**（既定 `orbit`）: `ffxi` にすると ffxitool5（`FUN_00405ab0`）と同じ **RH の View/Projection**（eye=(0,0.05,-5) / up=+Y / fov 45° / aspect 4:3 固定 / near 1 / far 20）で描きます。実効軸は **右=-X / 上=+Y / 奥=+Z**。`--axes on` で座標軸を表示できます。詳細は `docs/ANALYSIS-ffxitool5-Camera-2026-11-14.md`。
 - **`--loop on|off`**（`--shot` の既定 `off`）: `off` はタイムライン終了時に**凍結**（`--frames` を増やしても絵が変わらない）。`on` で従来の周回再生。
 - **`--alphaclip on|off` / `--alpharef N` / `--blend none`**: D3D8 の `ALPHATESTENABLE/ALPHAFUNC/ALPHAREF` 相当を D3D11 の **PS `discard`** で実装（既定 off）。`--blend none` と併用すると「ブレンドせずクリップ」。ffxitool5 自体は**アルファテスト未使用（ブレンド）**。詳細は `docs/ANALYSIS-ffxitool5-AlphaClip-2026-11-14.md`。
+- **`--colorop ffxi|simple`**（既定 `simple` = RGB×1.5 / α×1）: `ffxi` は ffxitool5 のテクスチャステージ **MODULATE4X**（RGB×4 / α×4）。`--gain N`（RGB）・`--alphagain N`（α）で個別調整、`--notex on` で頂点色だけの切り分け。詳細は `docs/ANALYSIS-Cure-Color-2026-11-14.md`。
 - 出力ファイルは**上書き**ですが、実行直後の読み取りは競合することがあるため、`Start-Sleep -Milliseconds 300` を挟むか `file      = ...` 行で対象 DAT を確認してください。
 - 必要資源（generator / texture / base）はアプリ非依存の `tools\EffectRes.ps1` で算出できます（`[res] SUMMARY ...`）。
 - **入れ子 Schedule**: `op 0x03` の名前が `0x07` を指す場合、その Schedule を並行実行します（`--selftest` の **`subtl    = N`**）。例: `12\43` の `main` は `hit1` を起動（`subtl = 1`）。

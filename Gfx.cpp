@@ -25,6 +25,7 @@ struct CBData
     XMFLOAT4   uv;          // uvRect = (u0, v0, u1, v1)。0x21 のフレーム矩形
     XMFLOAT4   opt;         // x = 色順（0: RGB / 1: BGR 入替）
                             // y = アルファクリップ有効 / z = しきい値 (0..1)
+    XMFLOAT4   gain;        // x = RGB 倍率 / y = α 倍率（MODULATE4X 相当は 4.0）
 };
 
 static const char* kShader =
@@ -37,6 +38,7 @@ static const char* kShader =
 "    float4   gColor;\n"
 "    float4   gUv;\n"
 "    float4   gOpt;\n"
+"    float4   gGain;\n"
 
 "};\n"
 
@@ -64,8 +66,9 @@ static const char* kShader =
 "    //   D3D11 には固定機能のアルファテストが無いので discard で置き換える。\n"
 "    if (gOpt.y > 0.5 && t.a * i.col.a < gOpt.z) discard;\n"
 "    // FFXI のエフェクトは「RGB ほぼ 0 ＋ alpha に形状」。透過なしで描くと黒い板になる。\n"
-"    // 参照（fire2noalpha.mp4）と同じ挙動になるよう、RGB と alpha をそのまま返す。\n"
-"    return float4(t.rgb * i.col.rgb * 1.5, t.a * i.col.a);\n"
+"    // 色は ffxitool5 のテクスチャステージ（MODULATE4X = テクスチャ×頂点色×4）に合わせ、\n"
+"    //   gGain.x = RGB 倍率 / gGain.y = α 倍率（既定 1.5 / 1.0、ffxi 相当は 4 / 4）。\n"
+"    return float4(saturate(t.rgb * i.col.rgb * gGain.x), saturate(t.a * i.col.a * gGain.y));\n"
 "}\n";
 
 //----------------------------------------------------------------------
@@ -84,6 +87,8 @@ namespace
     bool                     g_ColorSwap = false;   // 既定 RGB（テクスチャは RGBA として正しく読めている）
     bool                     g_AlphaClip = false;   // アルファクリップ（PS の discard）
     int                      g_AlphaRef  = 128;     // 0..255（128 = 0.5）
+    float                    g_GainRgb   = 1.5f;    // RGB 倍率（MODULATE4X 相当は 4.0）
+    float                    g_GainAlpha = 1.0f;    // α 倍率（同上）
     ID3D11RasterizerState*   g_Raster  = nullptr;
     ID3D11SamplerState*      g_Sampler = nullptr;
     ID3D11VertexShader*      g_VS      = nullptr;
@@ -330,6 +335,14 @@ void GfxSetAlphaClip(bool on, int ref255)
 bool GfxAlphaClip() { return g_AlphaClip; }
 int  GfxAlphaRef()  { return g_AlphaRef; }
 
+void GfxSetColorGain(float rgb, float alpha)
+{
+    g_GainRgb   = (rgb   >= 0.0f) ? rgb   : 0.0f;
+    g_GainAlpha = (alpha >= 0.0f) ? alpha : 0.0f;
+}
+float GfxColorGainRgb()   { return g_GainRgb; }
+float GfxColorGainAlpha() { return g_GainAlpha; }
+
 void GfxSetColorSwap(bool bgr) { g_ColorSwap = bgr; }
 bool GfxGetColorSwap() { return g_ColorSwap; }
 
@@ -407,6 +420,7 @@ void GfxDrawQuad(const float center[3], const float axisRight[3], const float ax
                           g_AlphaClip ? 1.0f : 0.0f,
                           (float)g_AlphaRef / 255.0f,
                           0.0f);
+    cb->gain   = XMFLOAT4(g_GainRgb, g_GainAlpha, 0.0f, 0.0f);
 
     g_Context->Unmap(g_CB, 0);
 

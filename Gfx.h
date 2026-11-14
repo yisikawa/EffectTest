@@ -65,6 +65,17 @@ int  GfxAlphaRef();
 // テクスチャの色順（FFXI の TIM は BGRA 格納のため、既定で B/R を入れ替える）
 void GfxSetColorSwap(bool bgr);
 bool GfxGetColorSwap();
+
+//------------------------------------------------------------------
+//  色のゲイン（テクスチャステージ相当）
+//    ffxitool5 は COLOROP/ALPHAOP = MODULATE4X（RGB も α も ×4）で、
+//    その後 SRCALPHA/ONE で加算合成する。当方の従来式は RGB×1.5 / α×1。
+//    rgb   : RGB の倍率（既定 1.5）
+//    alpha : α の倍率（既定 1.0。ffxi 相当は 4.0）
+//------------------------------------------------------------------
+void GfxSetColorGain(float rgb, float alpha);
+float GfxColorGainRgb();
+float GfxColorGainAlpha();
 ID3D11Device*        GfxDevice();
 ID3D11DeviceContext* GfxContext();
 
