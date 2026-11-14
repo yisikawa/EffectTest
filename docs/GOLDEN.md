@@ -49,7 +49,7 @@ tools\ShotStats.ps1 -Path out.png
 
 条件: **1280x720 / step=4 / 57,600 サンプル / `--frames 90` / 既定**
 （`--layout off` / `--emit on` / `--geo off` / `--uvscroll off` / `--colorfallback on` / `--size meter` /
-`--arrange ring` / `--ringplane xy` / `--ringscale 4` / `--ringradius xy`）
+`--arrange ring` / `--ringplane xy` / `--ringscale 4` / `--ringradius xy` / **`--loop off`**）
 
 | DAT | `nonBg` | `maxSum` | 備考 |
 |---|---|---|---|
@@ -183,7 +183,8 @@ tools\ShotStats.ps1 -Path tgt0.png
 
 | 項目 | 期待値 |
 |---|---|
-| `nonBg` / `maxSum` | **2,488 / 322** |
+| `nonBg` / `maxSum` | **6,991 / 313**（`--loop off` 既定 = 239f で凍結） |
+| `--loop on` のとき | 2,488 / 322（260f で 1 周した旧挙動） |
 | ログ | `[build] sched=tgt0` |
 | ログ | `[sub] mdam: base insts=3 at frame=200 ops=01 2B 00` |
 | 解消 | `[spawn] generator not found: mdam` が出ない（11\17 も同様） |

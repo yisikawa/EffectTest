@@ -55,6 +55,7 @@ namespace
     float g_SizeScale = 1.0f;     // ビルボードの基準半径
     char  g_OnlyGen[9] = {};      // --only <name>: 指定 generator だけを描く（空 = 全部）
 char  g_ShotSched[9] = {};    // --sched <name>: --shot で再生する 0x07（空 = main）
+bool  g_ShotLoop   = false;   // --loop on|off: --shot のループ（既定 off = 終了時に凍結）
     // UV オフセット（sub+0xB4/0xB8）。0=off / 1=0..1 巡回 / 2=セル内巡回
     //   問題 2: bool だと `cell`(=2) が true(=1) に化けて 2 が到達不能になる。
     int   g_UvScroll  = 0;
@@ -1559,6 +1560,9 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
         }
 
         EffectContext ctx;
+        // 名前は 0x07 に厳密一致させる（BuildInternal は未知名を「最初の 0x07」へ
+        //   フォールバックするため、そのままだと main を黙ってダンプしてしまう）
+        if (d.Find(nm, 0x07) == nullptr) { Log("[action] 0x07 が無い: %s", nm); return 4; }
         if (!ctx.BuildFromChunk(d, nm)) { Log("[action] %s : timeline 無し", nm); return 4; }
 
         Log("[action] %s insts=%zu dur=%.3fs", nm, ctx.Timeline().size(), ctx.Duration());
@@ -1971,6 +1975,19 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
                 continue;
             }
 
+            // ループ再生（--loop on|off）。off は「終了時に凍結」＝
+            //   frames が duration を超えても絵が変わらない（ゴールデンの時点を固定できる）。
+            if (_stricmp(tok, "--loop") == 0)
+            {
+                char mode[MAX_PATH] = {};
+                if (!NextToken(p, mode, MAX_PATH)) return 2;
+                if      (_stricmp(mode, "on")  == 0) g_ShotLoop = true;
+                else if (_stricmp(mode, "off") == 0) g_ShotLoop = false;
+                else { Log("[shot] unknown loop: %s", mode); return 2; }
+                Log("[shot] loop=%s", g_ShotLoop ? "on" : "off");
+                continue;
+            }
+
             // 粒子の初期配置（0x06 / 0x1F）を円周上にするかの A/B。既定 on
             if (_stricmp(tok, "--ring") == 0)
             {
@@ -2160,6 +2177,13 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
                 continue;
             }
 
+            // 未知の "--xxx" を位置引数として消費しない（タイポで出力名が変わる事故を防ぐ）
+            if (tok[0] == '-')
+            {
+                Log("[shot] unknown option: %s", tok);
+                return 2;
+            }
+
             if (dat[0] == 0) strncpy_s(dat, tok, _TRUNCATE);
             else             strncpy_s(png, tok, _TRUNCATE);
         }
@@ -2224,10 +2248,13 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
             }
         }
 
+        // ループ再生の適用（--shot の既定は off = 終了時に凍結）
+        g_Effect.SetLoop(g_ShotLoop);
+        Log("[shot] loop=%s frames=%d", g_ShotLoop ? "on" : "off", frames);
+
         for (int i = 0; i < frames; ++i)
         {
             g_Effect.Advance(1.0f / 60.0f);
-
             if (haveSkel)
             {
                 skel.Update((float)(i + 1) / 60.0f);
