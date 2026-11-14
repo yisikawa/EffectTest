@@ -161,6 +161,29 @@ struct GeneratorBlock
     char     geoName[9]   = {};   // 0x1F +0x1E の 8 文字（グループ名）
     char     geoName16[17] = {};  // 0x1F +0x1E の 16 文字（= 0x20 の 16 バイト名と一致）
 
+    //--- ffxitool5 パイプライン（--ffxivm on で使用。FUN_004041b0 の解析に基づく）---
+    //   データ2 / データ3 の命令は「type が本命」で dest は無意味。同 type の
+    //   重複は最後のレコードが有効（FUN_004041b0 は type 索引に上書きする）。
+    //   FfxiRec::rec は命令第 2 dword 以降の float ポインタ（rec+4 = arg0）。
+    struct FfxiRec
+    {
+        int            type = 0;    // 命令第 1 dword の op（0x01..）
+        const uint8_t* rec  = nullptr;   // レコード先頭（byte）。rec+4+4*i = arg_i
+                                          //（rec+0 は op|len dword 自身）
+    };
+    struct FfxiKey
+    {
+        int      type = 0;      // op（0x21..0x2F など）
+        uint32_t first = 0;     // 0x19 チャンクの {t,v} 先頭（chunk+0x10）
+        uint32_t count = 0;     // ペア数（cap 64）
+    };
+    std::vector<FfxiRec> ffxiB;    // データ2（tblB）の全レコード
+    std::vector<FfxiRec> ffxiC;    // データ3（tblC）の全レコード
+    std::vector<FfxiKey> ffxiKeys; // データ2/3 のキー op が参照する 0x19 表（+0x10）
+    int      ffxiLife  = 0;        // type1 rec+0x22（寿命フレーム。Fun_00404750 の ctx+0x1c）
+    uint8_t  ffxiShape = 0;        // type1 rec+0x21（0x0B→0x1F geo / 0x0E→0x21 フレーム / 0x25）
+    float    ffxiPos[3] = { 0, 0, 0 };   // type1 rec+0x14..0x1C（初期位置）
+
     inline bool HasFrames() const { return !texFrames.empty(); }
 
     inline float Length() const { return (frames + 1) * (1.0f / 60.0f); }
@@ -182,9 +205,30 @@ struct SubUnit
     //   **命令の第 3 dword はオフセットではなく 0x19 チャンク名**（"k006" 等）なので、
     //   スポーン時（VM#1）に名前解決し「表の先頭オフセット + 件数」で保持する。
     //   keyCount == 0 は未解決。VM#2 はその場合スロットを書かない（0 で上書きしない）。
+    //   ※ AltanaView 経路は +0x18、ffxitool5 経路（ffxiKey）は +0x10（実データ検証済み）
     uint32_t  keyFirst[SUB_DEST_N] = {};   // 0x19 のチャンク先頭 + 0x18（[time,value] の先頭）
     uint8_t   keyCount[SUB_DEST_N] = {};   // エントリ数（0..64）
     uint8_t   keyCur[SUB_DEST_N]   = {};   // 補間カーソル（元実装 particle[dest+0x43] の前進位置）
+    float     ffxiFrameColor[3] = { 1.0f, 1.0f, 1.0f };   // ffxi: 0x21 フレームの頂点色（0x80 = 1.0）
+
+    // ffxitool5 パイプライン（FUN_00404750 の 0x5C B 粒子構造体の相当分）。
+    //   --ffxivm on のときだけ使う。subs と 1:1 対応（emit 毎に push / 寿命で erase）。
+    struct FfxiPart
+    {
+        int      age = 0;                 // [0] 年齢（フレーム）
+        float    pos[3] = { 0, 0, 0 };    // [1..3]
+        float    rot[3] = { 0, 0, 0 };    // [4..6]
+        float    scl[3] = { 1, 1, 1 };    // [7..9]
+        float    w = 0.0f, h = 0.0f;      // [0xA]/[0xB] 幅・高さアキュムレータ
+        float    posV[3] = { 0, 0, 0 };   // [0xC..0xE]
+        float    rotV[3] = { 0, 0, 0 };   // [0xF..0x11]
+        float    sclV[3] = { 0, 0, 0 };   // [0x12..0x14]
+        float    wRate = 0.0f, hRate = 0.0f;   // [0x15]/[0x16] = データ3 0x27/0x28 の rec+4
+        uint32_t keyMask = 0;             // 描画時に評価済みのキートラック種別ビット（デバッグ用）
+        bool     addBlend = false;        // データ2 0x1E rec+4 bit2 が立っていない = 加算
+                                           //（FUN_004050b0: bit2 クリア → DESTBLEND ONE）
+    };
+    FfxiPart ffxi;
 };
 
 //----------------------------------------------------------------------
@@ -210,17 +254,26 @@ struct MotionInstance
     float emitTimer    = 0.0f;     // 次の放出までの残り時間
     float emitInterval = 0.0f;     // 放出間隔（= 寿命 / 総放出数）
 
+    //--- ffxitool5 パイプライン（--ffxivm on）。FUN_004057a0 / FUN_00404750 相当 ---
+    int   ffxiEmitAge  = 0;        // ctx[5] 相当。emitAge % (genFrames+1)==0 で放出
+    int   ffxiWindow   = -1;       // op 0x02 の param（ctx[6] 相当）。放出ウィンドウ寿命
+    float ffxiAcc      = 0.0f;     // フレームアキュムレータ（60fps で age を進める）
+    int   ffxiFrames   = 0;        // genFrames+1（放出周期）
+    int   ffxiSpawnedTotal = 0;    // ctx[0x40a] 相当。type 0x1F 円環の位相に使う
+
     int SubCount() const { return (int)subs.size(); }
     SubObject& Sub0() { return subs[0].sub; }
 
-    void Reset(const DatFile* d, const GeneratorBlock* g, float start, int tex, int op, bool applyGeo = false);
+    void Reset(const DatFile* d, const GeneratorBlock* g, float start, int tex, int op, bool applyGeo = false, int tlParam = -1);
     void Eval(const class EffectContext& ctx, float dt);
 
     void InitSub(SubUnit& su, bool applyGeo);
     // 粒子を 1 個生成し、VM#1（＝生成時初期化）を 1 回だけ実行する（EffectVm.cpp）
-    void SpawnSub(const class EffectContext& ctx, bool applyGeo);
+    void SpawnSub(const class EffectContext& ctx, bool applyGeo, int tlParam = -1);
     // 寿命到達時の再初期化（AltanaView FUN_00410090, EffectVm.cpp）
     void RespawnSub(float carryDt);
+    // ffxitool5 パイプラインの 1 フレーム処理（放出 / 積分 / 寿命 / 描画同期。EffectFfxi.cpp）
+    void EvalFfxi(const class EffectContext& ctx, float dt);
 };
 
 // 連続放出モデル（--emit）の切替。Reset が参照するためグローバルに置く
@@ -277,6 +330,21 @@ void EffectSetNodeScope(int scope);
 int  EffectNodeScope();
 // 対象外として読み飛ばした type の集計（vm=1: tblB / vm=2: tblC）
 std::vector<OpCount> EffectNodeSkipStat(int vm);
+
+//--- ffxitool5 パイプライン（--ffxivm on / EffectFfxi.cpp）--------------------
+// 共有乱数（EffectVm.cpp の匿名名前空間 Rand01 と同じ系列。0..1 単調 LCG）
+float EffectRand01();
+// type 7（球面散布）の距離係数。unaff_EDI は逆コンパイルで欠落したため
+// 定数で代替する（--sphdist で調整。既定 1.0）
+void EffectSetSphDist(float d);
+float EffectSphDist();
+// ffxi VM モードの切替。on で BuildInternal が ParseFfxi() を実行し、
+// MotionInstance::Eval が EvalFfxi()（FUN_00404750/00403880/004050b0 の移植）に置き換わる
+void EffectSetFfxiVm(bool on);
+bool EffectFfxiVm();
+// ffxiB / ffxiC のレコード検索（同 type は最後のものが有効。FUN_004041b0 準拠）
+const GeneratorBlock::FfxiRec* EffectFfxiFindRec(const std::vector<GeneratorBlock::FfxiRec>& v, int type);
+const GeneratorBlock::FfxiKey* EffectFfxiFindKey(const std::vector<GeneratorBlock::FfxiKey>& v, int type);
 
 // VM#1 のキー表参照（0x19 名）の解決監査（--selftest / 問題 1 の検証）
 //   ops      : VM#1 のキー op の総数
@@ -392,7 +460,7 @@ private:
     // src の 0x07 を探し、無ければ base DAT の 0x07 を探す（op 0x03 の入れ子）
     bool StartSubTimelineFrom(const DatFile& src, const char* name4);
     bool ParseTimeline(const DatFile& dat, const DatChunk& c, std::vector<TimelineInst>* out) const;
-    void Spawn(const char* name4, float startSec, int op, const DatFile* src = nullptr);
+    void Spawn(const char* name4, float startSec, int op, const DatFile* src = nullptr, int tlParam = -1);
     // base DAT の 0x05 を GeneratorBlock に変換して返す（MotionInstance がポインタを保持するため
     //   unique_ptr で安定した領域に置く）
     const GeneratorBlock* FindBaseGenerator(const char* name4);

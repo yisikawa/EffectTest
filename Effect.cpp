@@ -296,6 +296,87 @@ static bool ParseGeometry(const DatFile& dat, const char* name4, GeneratorBlock&
     return true;
 }
 
+//======================================================================
+//  ffxitool5 パイプラインのジェネレータ解析（--ffxivm on のときのみ）
+//    FUN_004041b0 の移植: データ2 / データ3 を走査して
+//      ・レコード（byte ポインタ）を ffxiB / ffxiC へ type 付きで保存
+//        （同 type の重複は最後のものが有効＝ type 索引への上書きと同じ）
+//      ・キー op（0x21..0x2F）は第 3 dword の 0x19 チャンク名を解決し、
+//        開始 = chunk+0x10（実データ検証済み。AltanaView 経路の +0x18 とは別）で保存
+//      ・type1（48 B）から寿命 +0x22 / 形状種別 +0x21 / 初期位置 +0x14..0x1C を取る。
+//        形状チャンク名（+0x0C）が linkName と異なるときは、その名で
+//        0x21（テクスチャフレーム）/ 0x1F（ジオメトリ）を追加解析する
+//======================================================================
+static void ParseFfxi(const DatFile& dat, GeneratorBlock& g)
+{
+    const uint32_t tbls[2] = { g.tblB, g.tblC };
+    for (int t = 0; t < 2; ++t)
+    {
+        uint32_t ip = tbls[t];
+        for (int guard = 0; guard < 4096; ++guard)
+        {
+            const uint8_t* p = dat.At(ip);
+            if (p == nullptr || !dat.InRange(ip, 8)) break;
+            const uint8_t op = p[0];
+            const uint32_t len = (uint32_t)(p[1] & 0x1F);
+            if (op == 0x00 || len == 0) break;
+
+            GeneratorBlock::FfxiRec r;
+            r.type = op;
+            r.rec  = p;
+            (t == 0 ? g.ffxiB : g.ffxiC).push_back(r);
+
+            // キー op: 第 3 dword = 0x19 チャンク名
+            if (op >= 0x21 && op <= 0x2F && dat.InRange(ip + 8, 4))
+            {
+                char nm[5] = {};
+                memcpy(nm, p + 8, 4);
+                nm[4] = '\0';
+                const DatChunk* kc = dat.Find(nm, 0x19);
+                if (kc != nullptr && kc->size > 0x10 && dat.InRange(kc->offset, kc->size))
+                {
+                    GeneratorBlock::FfxiKey k;
+                    k.type  = op;
+                    k.first = kc->offset + 0x10;              // {t,v} ペア列の先頭
+                    k.count = (kc->size - 0x10) / 8;
+                    if (k.count > 64) k.count = 64;
+
+                    bool replaced = false;
+                    for (GeneratorBlock::FfxiKey& e : g.ffxiKeys)
+                    {
+                        if (e.type == op) { e = k; replaced = true; break; }
+                    }
+                    if (!replaced) g.ffxiKeys.push_back(k);
+                }
+            }
+            ip += len * 4;
+        }
+    }
+
+    // type1（48 B）: 寿命 / 形状 / 初期位置
+    const GeneratorBlock::FfxiRec* t1 = EffectFfxiFindRec(g.ffxiB, 0x01);
+    if (t1 != nullptr && t1->rec != nullptr)
+    {
+        uint16_t life = 0;
+        memcpy(&life, t1->rec + 0x22, 2);
+        g.ffxiLife  = (int)life;
+        g.ffxiShape = t1->rec[0x21];
+        memcpy(&g.ffxiPos[0], t1->rec + 0x14, 4);
+        memcpy(&g.ffxiPos[1], t1->rec + 0x18, 4);
+        memcpy(&g.ffxiPos[2], t1->rec + 0x1C, 4);
+
+        // 形状チャンク名（+0x0C）: linkName と異なればその名で 0x21 / 0x1F を解析
+        char nm[5] = {};
+        memcpy(nm, t1->rec + 0x0C, 4);
+        nm[4] = '\0';
+        if (nm[0] != '\0' && memcmp(nm, g.linkName, 4) != 0)
+        {
+            ParseTexFrames(dat, nm, g.texFrames, g.texName);
+            ParseGeometry(dat, nm, g);
+        }
+    }
+}
+
 // テクスチャ名: 0x1E に 8 文字×2（グループ名 + specific 名）＝ 0x20 の 16 バイト名と同じ
 //   実測: 'fire'  → "fire1   " + "fire16  "
 //         'f101'  → "firef1  " + "f10f    "
@@ -308,7 +389,7 @@ static void ReadGeoName(const uint8_t* p, GeneratorBlock& g)
     for (int i = 7; i >= 0 && (g.geoName[i] == ' ' || g.geoName[i] == '\0'); --i) g.geoName[i] = '\0';
 }
 
-void MotionInstance::Reset(const DatFile* d, const GeneratorBlock* g, float start, int tex, int op, bool applyGeo)
+void MotionInstance::Reset(const DatFile* d, const GeneratorBlock* g, float start, int tex, int op, bool applyGeo, int tlParam)
 {
     dat       = d;
     gen       = g;
@@ -316,6 +397,13 @@ void MotionInstance::Reset(const DatFile* d, const GeneratorBlock* g, float star
     expired   = false;
     texIndex  = tex;
     spawnOp   = op;
+
+    // ffxitool5 パイプライン（--ffxivm on）: op 0x02 の param = 放出ウィンドウ（ctx[6]）
+    ffxiWindow  = tlParam;
+    ffxiEmitAge = 0;
+    ffxiAcc     = 0.0f;
+    ffxiFrames  = (g != nullptr) ? (int)g->frames + 1 : 1;
+    ffxiSpawnedTotal = 0;
 
     // 粒子数 = ジェネレータの +0x78 + 1（AltanaView の MotionObject.count と同じ）
     const int n = (g != nullptr) ? (int)g->count + 1 : 1;
@@ -328,7 +416,7 @@ void MotionInstance::Reset(const DatFile* d, const GeneratorBlock* g, float star
     emitTimer    = 0.0f;
 
     // 従来モード（--emit off）は t=0 で全部そろえる（旧挙動の再現用）
-    if (!EffectEmitMode())
+    if (!EffectEmitMode() && !EffectFfxiVm())
     {
         subs.assign((size_t)emitTotal, SubUnit{});
         for (SubUnit& su : subs) InitSub(su, applyGeo);
@@ -513,6 +601,9 @@ bool EffectContext::BuildInternal(const DatFile& dat, const char* mainChunkName)
         if (!dat.InRange(g.tblB, 1)) g.tblB = g.payloadOff;
         if (!dat.InRange(g.tblC, 1)) g.tblC = g.payloadOff;
         if (!dat.InRange(g.tblD, 1)) g.tblD = g.payloadOff;
+
+        // ffxitool5 パイプライン（--ffxivm on）: データ2/3 のレコードと 0x19 キー表を解析
+        if (EffectFfxiVm()) ParseFfxi(dat, g);
 
         m_Generators.push_back(g);
     }
@@ -708,12 +799,12 @@ void EffectContext::ExecInst(const TimelineInst& in)
     switch (in.op)
     {
     case 0x02:      // モーション生成
-        Spawn(in.name, in.param / 60.0f, (int)in.op);
+        Spawn(in.name, in.param / 60.0f, (int)in.op, nullptr, (int)in.param);
         break;
 
     case 0x03:      // 別種生成: 0x07（別 Schedule）なら入れ子で実行、0x05 なら従来どおり生成
         if (!StartSubTimeline(in.name))
-            Spawn(in.name, in.param / 60.0f, (int)in.op);
+            Spawn(in.name, in.param / 60.0f, (int)in.op, nullptr, (int)in.param);
         break;
 
     case 0x2A:      // 色（inline RGBA）
@@ -852,12 +943,12 @@ void EffectContext::ExecSub(SubTimeline& s, const TimelineInst& in)
     switch (in.op)
     {
     case 0x02:
-        Spawn(in.name, in.param / 60.0f, (int)in.op, sdat);
+        Spawn(in.name, in.param / 60.0f, (int)in.op, sdat, (int)in.param);
         break;
 
     case 0x03:      // 入れ子 Schedule（base の 0x07 も対象）
         if (sdat == nullptr || !StartSubTimelineFrom(*sdat, in.name))
-            Spawn(in.name, in.param / 60.0f, (int)in.op, sdat);
+            Spawn(in.name, in.param / 60.0f, (int)in.op, sdat, (int)in.param);
         break;
 
     case 0x2A:
@@ -873,7 +964,7 @@ void EffectContext::ExecSub(SubTimeline& s, const TimelineInst& in)
     }
 }
 
-void EffectContext::Spawn(const char* name4, float startSec, int op, const DatFile* src)
+void EffectContext::Spawn(const char* name4, float startSec, int op, const DatFile* src, int tlParam)
 {
     const DatFile* d = (src != nullptr) ? src : m_Dat;
 
@@ -904,7 +995,7 @@ void EffectContext::Spawn(const char* name4, float startSec, int op, const DatFi
     if (tex < 0 && g->geoName16[0] != '\0') tex = FindTextureIndexBy16(g->geoName16);
     if (tex < 0 && g->geoName[0] != '\0') tex = FindTextureIndexByGroup(g->geoName);
     if (tex < 0 && g->geoName[0] != '\0') tex = FindTextureIndexBySpecific(g->geoName);
-    mi.Reset(d, g, startSec, tex, op, m_Geo);
+    mi.Reset(d, g, startSec, tex, op, m_Geo, tlParam);
 
     // 描画に使う SRV（借用）: ローカル 0x20 → base の 0x20 の順で解決
     if (tex >= 0 && tex < (int)m_Textures.size())

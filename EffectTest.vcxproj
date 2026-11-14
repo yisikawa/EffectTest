@@ -82,6 +82,7 @@
     <ClCompile Include="Dat.cpp" />
     <ClCompile Include="Effect.cpp" />
     <ClCompile Include="EffectBase.cpp" />
+    <ClCompile Include="EffectFfxi.cpp" />
     <ClCompile Include="EffectVm.cpp" />
     <ClCompile Include="Gfx.cpp" />
     <ClCompile Include="ListDb.cpp" />

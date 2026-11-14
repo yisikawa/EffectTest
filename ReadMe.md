@@ -141,9 +141,11 @@ EffectTest.exe --shot "<DAT>" out.png --camera ffxi --res 640x480   # ffxitool5 
 EffectTest.exe --shot "<DAT>" out.png --loop on   # ループ再生（--shot の既定は off = 終了時凍結）
 EffectTest.exe --shot "<DAT>" out.png --alphaclip on --blend none   # アルファクリップ（既定 off）
 EffectTest.exe --shot "<DAT>" out.png --colorop ffxi   # ffxitool5 と同じ色式（RGB×4 / α×4）
+EffectTest.exe --shot "<DAT>" out.png --ffxivm on --nodetypes ffxi   # ffxitool5 パーティクル パイプラインで再生
 ```
 
 - **`--nodetypes ffxi|all`**（既定 `all`）: `ffxi` にすると ffxitool5 が `Doesnt work` と表示する type を**対象外**として実行しません（`--opstat` に `skip 0x..` を出します）。詳細は `docs/ANALYSIS-ffxitool5-NODETYPES-2026-11-14.md`。
+- **`--ffxivm on|off`**（既定 `off`）: ffxitool5 のパーティクル実行パイプライン（`FUN_00404750` 放出 / `FUN_00403880` 積分 / `FUN_004050b0` 描画同期 / `FUN_00403940` キー補間の移植）でジェネレータを動かします。on 時は **色ゲイン ×4（MODULATE4X 相当）を自動設定**し、**深度テスト無し**（ffxitool5 と同じ。`GfxSetDepthTest(false)`）で描きます。合成モードは粒子ごと（データ2 type 0x1E rec+4 bit2 クリア = 加算）。既存の AltanaView 経路（VM#1/VM#2）は無変更。base DAT 由来のジェネレータは未対応（粒子が出ません）。詳細は `docs/ANALYSIS-ffxitool5-Particle-2026-11-14.md` §7。
 - `--selftest` は **`prog=0x50`**（命令列の開始位置）と、各インスタンス行の **`tex=`**（`+0xAC` から解決した `0x20` の番号）・**`link=`**（`+0xAC` の 4 文字名）・**`uv=(u0,v0,u1,v1)`** を出力します。generator 行には **`frm=N`**（同名 `0x21` のフレーム数。無ければ `frm=0(none)`）が出ます。`tex=-1` は `0x1F`/`0x21`/`0x3D` を指す generator では正常（白）。**base（`ROM\0\0.DAT`）の `0x20` は `--shot` で `srv=` が非 0 になることで確認**できます。
 - 2026-11-12 追加の観測点:
   - **`keys      = N ops, N resolved, M unresolved`** — VM#1 のキー op の第 3 dword を `0x19` チャンク名として解決した率。**`unresolved=0` が正常**（`11\17`=8, `11\18`=9, `12\43`=10, `11\22`=33）。

@@ -51,6 +51,12 @@ void         GfxSetBlendMode(GfxBlendMode mode);
 GfxBlendMode GfxGetBlendMode();
 const char*  GfxBlendModeName(GfxBlendMode mode);
 
+// 深度テストの切替（--ffxivm on で ffxitool5 と同じ「深度テスト無し」にする）
+//   既定 on（DepthEnable=TRUE / 書き込み無し）。off で DepthEnable=FALSE の
+//   第 2 の DSS に切り替える。
+void GfxSetDepthTest(bool on);
+bool GfxDepthTest();
+
 //------------------------------------------------------------------
 //  アルファクリップ（D3D8 の ALPHATESTENABLE/ALPHAREF/ALPHAFUNC 相当）
 //    D3D11 には固定機能のアルファテストが無いため、PS で

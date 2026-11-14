@@ -494,6 +494,10 @@ static void RenderScene(bool present)
     const float* clear = g_ClearColor;
     GfxBeginFrame(clear);
 
+    // ffxi VM モード: ffxitool5 は深度テスト無しで描く（FUN_004057a0 側の設定）
+    const bool ffxiVm = EffectFfxiVm();
+    if (ffxiVm) GfxSetDepthTest(false);
+
     if (g_ShowAxes) DrawReference();   // 既定は非表示（起動時は何も描かない）
 
     // カメラの右/上ベクトル（ビルボード用）
@@ -538,6 +542,8 @@ static void RenderScene(bool present)
         if (!g_NoTexture && srv == nullptr) continue;
 
         // 粒子（サブ）ごとに 1 枚描く（AltanaView の DrawPrimitive(…, subs*2) 相当）
+        //   ffxi モード: 合成モードは粒子ごとに切替（データ2 0x1E rec+4 bit2）のため、
+        //   g_BlendAuto の有無にかかわらず復元する
         const GfxBlendMode savedBlend = GfxGetBlendMode();
         if (g_BlendAuto)
             GfxSetBlendMode((mi.blackRatio > 0.5f) ? GFX_BLEND_ADD : GFX_BLEND_ALPHA);
@@ -549,10 +555,16 @@ static void RenderScene(bool present)
             const float* s = su.sub.At(SUB_SCALE);
             const float* c = su.sub.At(SUB_COLOR);
 
+            // ffxi: 合成モードは粒子ごと（ffxitool5 は D3D9 の 1 パスなので実質
+            //   粒子単位の SetRenderState。bit2 クリア = DESTBLEND ONE = 加算）
+            if (ffxiVm)
+                GfxSetBlendMode(su.ffxi.addBlend ? GFX_BLEND_ALPHA_ADD : GFX_BLEND_ALPHA);
+
             float center[3] = { p[0], p[1], p[2] };
 
             // データ2 op 0x01 の位置オフセット（参考: cosmosa の「float x, y, z」）
-            if (mi.gen->hasPartOfs)
+            //   ffxi モードでは type1 rec+0x14 が既に絶対位置のため二重加算を避ける
+            if (!ffxiVm && mi.gen->hasPartOfs)
             {
                 center[0] += mi.gen->partOfs[0];
                 center[1] += mi.gen->partOfs[1];
@@ -591,7 +603,27 @@ static void RenderScene(bool present)
             // 0x21 クワッドのローカル範囲（±2 など）を寸法に使う場合（--size quad）
             float halfW = g_SizeScale * sx;
             float halfH = g_SizeScale * sy2;
-            if (g_SizeMode == 1 && su.quadHalf[0] > 0.0f && su.quadHalf[1] > 0.0f)
+            if (ffxiVm)
+            {
+                //--- ffxi: 形状 0x0E（0x21 フレーム）はフレーム寸法 × スケール、
+                //   形状 0x25 はキー 0x2E/0x2F から積んだ w/h（quadHalf = w×0.5）を
+                //   そのまま使う（スケールは掛けない）。それ以外はスケールのみ ---
+                const uint8_t fShape = mi.gen->ffxiShape;
+                if (fShape == 0x0E && su.quadHalf[0] > 0.0f && su.quadHalf[1] > 0.0f)
+                {
+                    halfW = g_SizeScale * su.quadHalf[0] * sx;
+                    halfH = g_SizeScale * su.quadHalf[1] * sy2;
+                    center[0] += axR[0] * su.quadCenter[0] + axU[0] * su.quadCenter[1];
+                    center[1] += axR[1] * su.quadCenter[0] + axU[1] * su.quadCenter[1];
+                    center[2] += axR[2] * su.quadCenter[0] + axU[2] * su.quadCenter[1];
+                }
+                else if (fShape == 0x25)
+                {
+                    halfW = g_SizeScale * su.quadHalf[0];
+                    halfH = g_SizeScale * su.quadHalf[1];
+                }
+            }
+            else if (g_SizeMode == 1 && su.quadHalf[0] > 0.0f && su.quadHalf[1] > 0.0f)
             {
                 // 0x21 のクワッド範囲は既にメートル実寸（例: ±2 → 4 m 角）。
                 // VM のスケール（scl）は現状 X 成分が破綻しているため掛けない。
@@ -635,7 +667,8 @@ static void RenderScene(bool present)
             // 面内回転（--spin on）: スピン角（SubObject 0xBC の Z 成分）で
             //   クワッドを視線まわりに回す（ビルボードのロール）。
             //   VM#1 0x3D/0x3E/0x40 と VM#2 0x29/0x2B が角度を積む。
-            if (EffectSpin())
+            //   ffxi モード: キー 0x24（rotX）が入るためゲート無しで適用する
+            if (EffectSpin() || ffxiVm)
             {
                 const float* sp = su.sub.At(SUB_SPIN);
                 const float roll = sp[2];
@@ -652,9 +685,20 @@ static void RenderScene(bool present)
             }
 
             // 0x1F のサブクワッド描画（--geo on）: 6 頂点ごとに 1 枚ずつ描く
-            if (g_Effect.Geo() && mi.gen->hasGeo && !mi.gen->geoQuads.empty())
+            //   ffxi モード: 形状 0x0B（geo）はゲート無しで常に描く（ffxitool5 が
+            //   0x1F を持つジェネレータでビルボードを描かないため）
+            const bool ffxiGeo = ffxiVm && (mi.gen->ffxiShape == 0x0B) &&
+                                 !mi.gen->geoQuads.empty();
+            if ((g_Effect.Geo() && mi.gen->hasGeo && !mi.gen->geoQuads.empty()) || ffxiGeo)
             {
                 float rgbaG[4] = { c[0], c[1], c[2], c[3] };
+                // ffxi: 0x21 クワッドの頂点色（0x80 = 1.0。FUN_00403030 の (v*inst)>>7 相当）
+                if (ffxiVm)
+                {
+                    rgbaG[0] *= su.ffxiFrameColor[0];
+                    rgbaG[1] *= su.ffxiFrameColor[1];
+                    rgbaG[2] *= su.ffxiFrameColor[2];
+                }
                 if (g_ColorFallback && rgbaG[0] == 0.0f && rgbaG[1] == 0.0f && rgbaG[2] == 0.0f)
                     rgbaG[0] = rgbaG[1] = rgbaG[2] = 1.0f;
                 bool drewGeo = false;
@@ -664,18 +708,31 @@ static void RenderScene(bool present)
                 {
                     for (const GeneratorBlock::GeoQuad& gq : mi.gen->geoQuads)
                     {
-                        // 3D の実頂点形状（A/B/C から作った平行四辺形）をそのまま使う
-                        //   0x1F の頂点は実寸（m）なので、インスタンスの Scale は掛けない
-                        //   （Scale はビルボード／0x21 のサイズ側で効く）
-                        float cq[3] = { center[0] + gq.ctr[0],
-                                        center[1] + gq.ctr[1],
-                                        center[2] + gq.ctr[2] };
-                        float aR[3] = { gq.aR[0] * g_SizeScale,
-                                        gq.aR[1] * g_SizeScale,
-                                        gq.aR[2] * g_SizeScale };
-                        float aU[3] = { gq.aU[0] * g_SizeScale,
-                                        gq.aU[1] * g_SizeScale,
-                                        gq.aU[2] * g_SizeScale };
+                        float cq[3];
+                        float aR[3];
+                        float aU[3];
+                        if (ffxiGeo)
+                        {
+                            // ffxi: 粒子スケール（s[0..2]）を成分ごとに掛ける
+                            for (int a = 0; a < 3; ++a)
+                            {
+                                cq[a] = center[a] + gq.ctr[a] * s[a] * g_SizeScale;
+                                aR[a] = gq.aR[a] * s[a] * g_SizeScale;
+                                aU[a] = gq.aU[a] * s[a] * g_SizeScale;
+                            }
+                        }
+                        else
+                        {
+                            // 3D の実頂点形状（A/B/C から作った平行四辺形）をそのまま使う
+                            //   0x1F の頂点は実寸（m）なので、インスタンスの Scale は掛けない
+                            //   （Scale はビルボード／0x21 のサイズ側で効く）
+                            for (int a = 0; a < 3; ++a)
+                            {
+                                cq[a] = center[a] + gq.ctr[a];
+                                aR[a] = gq.aR[a] * g_SizeScale;
+                                aU[a] = gq.aU[a] * g_SizeScale;
+                            }
+                        }
 
                         if (Mptr != nullptr)
                         {
@@ -724,6 +781,13 @@ static void RenderScene(bool present)
             }
 
             float rgba[4] = { c[0], c[1], c[2], c[3] };
+            // ffxi: 0x21 クワッドの頂点色（0x80 = 1.0。FUN_00403030 の (v*inst)>>7 相当）
+            if (ffxiVm)
+            {
+                rgba[0] *= su.ffxiFrameColor[0];
+                rgba[1] *= su.ffxiFrameColor[1];
+                rgba[2] *= su.ffxiFrameColor[2];
+            }
             // 問題 7: 代替処理は不具合（キー表の未解決など）を隠すため、
             //   --colorfallback off で無効化して A/B できるようにする（既定 on）。
             if (g_ColorFallback)
@@ -783,9 +847,13 @@ static void RenderScene(bool present)
             }
         }
 
-        if (g_BlendAuto && savedBlend != GfxGetBlendMode())
+        // ffxi モードは粒子ごとにブレンドを切るため、g_BlendAuto 以外でも復元する
+        if ((g_BlendAuto || ffxiVm) && savedBlend != GfxGetBlendMode())
             GfxSetBlendMode(savedBlend);
     }
+
+    // ffxi VM モード: 深度テストを元に戻す
+    if (ffxiVm) GfxSetDepthTest(true);
 
     if (present) GfxEndFrame();
 }
@@ -1369,6 +1437,7 @@ static int RunSelfTest(const char* path)
                     f, eff.Ip(), eff.Timeline().size(), eff.Instances().size());
             for (const MotionInstance& mi : eff.Instances())
             {
+                if (mi.SubCount() == 0) continue;   // ffxi モード: 未放出の粒子は出力しない
                 const SubUnit& su = mi.subs[0];
                 const float* p = su.sub.At(SUB_POS);
                 const float* s = su.sub.At(SUB_SCALE);
@@ -1808,6 +1877,29 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
                     Log("[shot] nodetypes=all");
                 }
                 else { Log("[shot] unknown nodetypes: %s", mode); return 2; }
+                continue;
+            }
+
+            // ffxitool5 パイプラインの切替（既定 off。既存 AltanaView 経路は無変更）
+            //   on: ParseFfxi / EvalFfxi（FUN_00404750/00403880/004050b0 の移植）で動かす
+            if (_stricmp(tok, "--ffxivm") == 0)
+            {
+                char mode[MAX_PATH] = {};
+                if (!NextToken(p, mode, MAX_PATH)) return 2;
+                if (_stricmp(mode, "on") == 0)
+                {
+                    EffectSetFfxiVm(true);
+                    // ffxitool5 の COLOROP/ALPHAOP = MODULATE4X 相当（--colorop ffxi と同じ）
+                    g_Gain = 4.0f; g_AlphaGain = 4.0f;
+                    GfxSetColorGain(g_Gain, g_AlphaGain);
+                    Log("[shot] ffxivm=on (ffxitool5 pipeline, gain x4, depth test off)");
+                }
+                else if (_stricmp(mode, "off") == 0)
+                {
+                    EffectSetFfxiVm(false);
+                    Log("[shot] ffxivm=off");
+                }
+                else { Log("[shot] unknown ffxivm: %s", mode); return 2; }
                 continue;
             }
 
@@ -2478,6 +2570,7 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int)
 
         for (const MotionInstance& mi : g_Effect.Instances())
         {
+            if (mi.SubCount() == 0) continue;   // ffxi モード: Eval 前は粒子が未放出
             const SubUnit& su = mi.subs[0];
             const float* pp = su.sub.At(SUB_POS);
             const float* ss = su.sub.At(SUB_SCALE);

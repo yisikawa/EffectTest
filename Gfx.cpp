@@ -82,6 +82,8 @@ namespace
     ID3D11RenderTargetView*  g_RTV     = nullptr;
     ID3D11DepthStencilView*  g_DSV     = nullptr;
     ID3D11DepthStencilState* g_DSS     = nullptr;
+    ID3D11DepthStencilState* g_DSSNoDepth = nullptr;   // 深度テスト無し（--ffxivm）
+    bool                     g_DepthTest = true;
     ID3D11BlendState*        g_Blends[GFX_BLEND_COUNT] = {};
     GfxBlendMode             g_BlendMode = GFX_BLEND_ALPHA;
     bool                     g_ColorSwap = false;   // 既定 RGB（テクスチャは RGBA として正しく読めている）
@@ -199,6 +201,12 @@ bool GfxInit(HWND hwnd, int width, int height)
     dsDesc.DepthFunc      = D3D11_COMPARISON_LESS_EQUAL;
     if (FAILED(g_Device->CreateDepthStencilState(&dsDesc, &g_DSS))) return false;
 
+    // 第 2 本: 深度テスト無し（ffxitool5 準拠。--ffxivm on で使用）
+    D3D11_DEPTH_STENCIL_DESC dsDesc2 = {};
+    dsDesc2.DepthEnable    = FALSE;
+    dsDesc2.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ZERO;
+    if (FAILED(g_Device->CreateDepthStencilState(&dsDesc2, &g_DSSNoDepth))) return false;
+
     D3D11_RASTERIZER_DESC rsDesc = {};
     rsDesc.FillMode        = D3D11_FILL_SOLID;
     rsDesc.CullMode        = D3D11_CULL_NONE;
@@ -299,6 +307,7 @@ void GfxShutdown()
         if (g_Blends[i]) { g_Blends[i]->Release(); g_Blends[i] = nullptr; }
     }
     if (g_DSS)     { g_DSS->Release();     g_DSS = nullptr; }
+    if (g_DSSNoDepth) { g_DSSNoDepth->Release(); g_DSSNoDepth = nullptr; }
     if (g_DSV)     { g_DSV->Release();     g_DSV = nullptr; }
     if (g_RTV)     { g_RTV->Release();     g_RTV = nullptr; }
     if (g_Swap)    { g_Swap->Release();    g_Swap = nullptr; }
@@ -381,11 +390,22 @@ void GfxBeginFrame(const float rgba[4])
     g_Context->PSSetShader(g_PS, nullptr, 0);
     g_Context->PSSetSamplers(0, 1, &g_Sampler);
     g_Context->OMSetBlendState(g_Blends[g_BlendMode], nullptr, 0xFFFFFFFF);
-    g_Context->OMSetDepthStencilState(g_DSS, 0);
+    g_Context->OMSetDepthStencilState(g_DepthTest ? g_DSS : g_DSSNoDepth, 0);
     g_Context->RSSetState(g_Raster);
 }
 
 //======================================================================
+void GfxSetDepthTest(bool on)
+{
+    g_DepthTest = on;
+    if (g_Context != nullptr)
+        g_Context->OMSetDepthStencilState(on ? g_DSS : g_DSSNoDepth, 0);
+}
+
+bool GfxDepthTest()
+{
+    return g_DepthTest;
+}
 void GfxEndFrame()
 {
     if (g_Swap) g_Swap->Present(1, 0);

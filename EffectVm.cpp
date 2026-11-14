@@ -296,6 +296,18 @@ void EffectOpStatReset()
 void EffectSetNodeScope(int scope) { g_NodeScope = (scope == 1) ? 1 : 0; }
 int  EffectNodeScope() { return g_NodeScope; }
 
+//--- ffxitool5 パイプライン（--ffxivm / EffectFfxi.cpp）----------------------
+bool  g_FfxiVm     = false;    // --ffxivm on で Eval を EvalFfxi() へ置き換える
+float g_FfxiSphDist = 1.0f;    // type 7（球面散布）の距離係数（unaff_EDI の代替）
+
+void EffectSetFfxiVm(bool on) { g_FfxiVm = on; }
+bool EffectFfxiVm() { return g_FfxiVm; }
+void EffectSetSphDist(float d) { g_FfxiSphDist = d; }
+float EffectSphDist() { return g_FfxiSphDist; }
+
+// 共有乱数（匿名名前空間の Rand01 と同じ系列。EffectFfxi.cpp から使う）
+float EffectRand01() { return (float)rand() / (float)RAND_MAX; }
+
 std::vector<OpCount> EffectNodeSkipStat(int vm)
 {
     std::vector<OpCount> out;
@@ -931,8 +943,9 @@ static bool Vm2(const MotionInstance& mi, SubUnit& su, float dt, float rootDurat
 //    - 寿命時: elapsed/T01 を 0 に戻し、Move に乱数位相・UV に乱数オフセットを
 //              加え（符号はマイナス）、端数時間だけ進める
 //======================================================================
-void MotionInstance::SpawnSub(const EffectContext& ctx, bool applyGeo)
+void MotionInstance::SpawnSub(const EffectContext& ctx, bool applyGeo, int tlParam)
 {
+    (void)tlParam;
     subs.push_back(SubUnit{});
     InitSub(subs.back(), applyGeo);
     Vm1(*this, subs.back(), ctx);
@@ -967,6 +980,13 @@ void MotionInstance::RespawnSub(float carryDt)
 void MotionInstance::Eval(const EffectContext& ctx, float dt)
 {
     if (gen == nullptr || dat == nullptr) return;
+
+    // ffxitool5 パイプライン（--ffxivm on）: FUN_00404750 / FUN_00403880 / FUN_004050b0 の移植
+    if (EffectFfxiVm())
+    {
+        EvalFfxi(ctx, dt);
+        return;
+    }
 
     bool ended = false;
 
